@@ -20,6 +20,103 @@ void patch(String path, List<(Pattern, String)> edits) {
   f.writeAsStringSync(text);
 }
 
+/// Roda um comando; devolve true se terminou bem.
+bool sh(String exe, List<String> args) {
+  try {
+    final r = Process.runSync(exe, args, runInShell: Platform.isWindows);
+    if (r.exitCode != 0) stderr.writeln('aviso: $exe ${args.join(' ')}\n${r.stderr}');
+    return r.exitCode == 0;
+  } catch (e) {
+    stderr.writeln('aviso: não foi possível rodar $exe: $e');
+    return false;
+  }
+}
+
+void copyDir(Directory from, Directory to) {
+  to.createSync(recursive: true);
+  for (final e in from.listSync()) {
+    final name = e.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+    if (e is Directory) {
+      copyDir(e, Directory('${to.path}/$name'));
+    } else if (e is File) {
+      e.copySync('${to.path}/$name');
+    }
+  }
+}
+
+/// Baixa o qpdf e o Ghostscript (motores do módulo Documentos) e manda o
+/// build copiá-los para a pasta "pdftools" ao lado do FiLume.exe.
+/// Se algo falhar, o build continua: o app só avisa que o módulo está sem motor.
+void bundlePdfTools() {
+  if (!Platform.isWindows && Platform.environment['FILUME_FORCE_BUNDLE'] == null) return;
+  final root = Directory('third_party/pdftools');
+  final tmp = Directory('third_party/_dl');
+  try {
+    if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    tmp.createSync(recursive: true);
+
+    // qpdf: zip oficial (bin/qpdf.exe + DLLs).
+    if (!File('${root.path}/qpdf/bin/qpdf.exe').existsSync()) {
+      if (sh('gh', ['release', 'download', '-R', 'qpdf/qpdf', '-p', 'qpdf-*-msvc64.zip', '-D', tmp.path]) ||
+          sh('curl', ['-fsSL', '-o', '${tmp.path}/qpdf-12.4.2-msvc64.zip',
+            'https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-msvc64.zip'])) {
+        final zip = tmp.listSync().whereType<File>().firstWhere((f) => f.path.endsWith('.zip'));
+        Directory('${tmp.path}/qpdf').createSync();
+        if (sh('7z', ['x', '-y', '-o${tmp.path}/qpdf', zip.path]) ||
+            sh('tar', ['-xf', zip.path, '-C', '${tmp.path}/qpdf'])) {
+          final bin = Directory('${tmp.path}/qpdf')
+              .listSync(recursive: true)
+              .whereType<Directory>()
+              .firstWhere((d) => File('${d.path}/qpdf.exe').existsSync());
+          copyDir(bin, Directory('${root.path}/qpdf/bin'));
+          stdout.writeln('qpdf embutido.');
+        }
+      }
+    }
+
+    // Ghostscript: o instalador oficial é um pacote que o 7-Zip sabe abrir.
+    if (!File('${root.path}/gs/bin/gswin64c.exe').existsSync()) {
+      if (sh('gh', ['release', 'download', '-R', 'ArtifexSoftware/ghostpdl-downloads',
+            '-p', 'gs*w64.exe', '-D', tmp.path]) ||
+          sh('curl', ['-fsSL', '-o', '${tmp.path}/gs10080w64.exe',
+            'https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/gs10080w64.exe'])) {
+        final exe = tmp.listSync().whereType<File>().firstWhere((f) => f.path.endsWith('w64.exe'));
+        if (sh('7z', ['x', '-y', '-o${tmp.path}/gs', exe.path])) {
+          for (final part in const ['bin', 'lib', 'Resource', 'iccprofiles']) {
+            final d = Directory('${tmp.path}/gs/$part');
+            if (d.existsSync()) copyDir(d, Directory('${root.path}/gs/$part'));
+          }
+          // Runtime do Visual C++ ao lado do executável, para rodar em qualquer PC.
+          for (final dll in const ['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll']) {
+            final f = File('C:/Windows/System32/$dll');
+            if (f.existsSync()) f.copySync('${root.path}/gs/bin/$dll');
+          }
+          stdout.writeln('Ghostscript embutido.');
+        }
+      }
+    }
+  } catch (e) {
+    stderr.writeln('aviso: ferramentas de PDF não embutidas: $e');
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    } catch (_) {}
+  }
+
+  // Regra de instalação: copia third_party/pdftools para junto do .exe.
+  final cmake = File('windows/CMakeLists.txt');
+  if (cmake.existsSync() && !cmake.readAsStringSync().contains('pdftools')) {
+    cmake.writeAsStringSync('''
+
+# FiLume: motores de PDF (qpdf + Ghostscript) ao lado do executável.
+if(EXISTS "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pdftools")
+  install(DIRECTORY "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pdftools"
+    DESTINATION "\${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+endif()
+''', mode: FileMode.append);
+  }
+}
+
 void main() {
   patch('windows/runner/main.cpp', [
     ('L"filume"', 'L"FiLume"'),
@@ -55,5 +152,6 @@ void main() {
   if (icon.existsSync()) {
     icon.copySync('windows/runner/resources/app_icon.ico');
   }
+  bundlePdfTools();
   stdout.writeln('Runner do Windows personalizado.');
 }

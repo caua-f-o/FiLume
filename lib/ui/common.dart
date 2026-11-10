@@ -11,7 +11,7 @@ class Panel extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.45)),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -24,7 +24,7 @@ class Panel extends StatelessWidget {
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(28),
         child: Padding(padding: padding, child: child),
       ),
     );
@@ -70,52 +70,69 @@ class FireflyLogo extends StatelessWidget {
   }
 }
 
-/// Botão principal com degradê suave.
-class GlowButton extends StatelessWidget {
+/// Botão principal com degradê suave; ao pressionar, a forma "aperta"
+/// (de pílula para cantos menores), no estilo Material Expressive.
+class GlowButton extends StatefulWidget {
   const GlowButton({super.key, required this.label, required this.icon, required this.onPressed});
   final String label;
   final IconData icon;
   final VoidCallback? onPressed;
 
   @override
+  State<GlowButton> createState() => _GlowButtonState();
+}
+
+class _GlowButtonState extends State<GlowButton> {
+  bool _down = false;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final enabled = onPressed != null;
+    final enabled = widget.onPressed != null;
     final fg = enabled ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.38);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: enabled
-            ? LinearGradient(colors: [
-                cs.primary,
-                Color.alphaBlend(cs.tertiary.withValues(alpha: 0.45), cs.primary),
-              ])
-            : null,
-        color: enabled ? null : cs.onSurface.withValues(alpha: 0.10),
-      ),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, color: fg, size: 20),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(color: fg, fontWeight: FontWeight.w600),
+    final radius = BorderRadius.circular(_down && enabled ? 14 : 28);
+    return Listener(
+      onPointerDown: (_) => setState(() => _down = true),
+      onPointerUp: (_) => setState(() => _down = false),
+      onPointerCancel: (_) => setState(() => _down = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutBack,
+        height: 56,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          gradient: enabled
+              ? LinearGradient(colors: [
+                  cs.primary,
+                  Color.alphaBlend(cs.tertiary.withValues(alpha: 0.45), cs.primary),
+                ])
+              : null,
+          color: enabled ? null : cs.onSurface.withValues(alpha: 0.10),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: widget.onPressed,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(widget.icon, color: fg, size: 22),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      widget.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(color: fg, fontWeight: FontWeight.w700),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -248,6 +265,98 @@ class _PresetFieldState extends State<PresetField> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Caixa de dica com ícone.
+class InfoBox extends StatelessWidget {
+  const InfoBox(this.text, {super.key, this.icon = Icons.bolt});
+  final String text;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: t.colorScheme.secondaryContainer.withValues(alpha: 0.45),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: t.colorScheme.onSecondaryContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(text,
+                  style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSecondaryContainer)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Campo de texto que entrega um valor já interpretado (ou null se vazio).
+class ParsedField<T> extends StatefulWidget {
+  const ParsedField({
+    super.key,
+    required this.label,
+    required this.initialText,
+    required this.parse,
+    required this.onChanged,
+    this.allowEmpty = false,
+    this.hint,
+    this.suffix,
+  });
+  final String label;
+  final String initialText;
+  final T? Function(String) parse;
+  final ValueChanged<T?> onChanged;
+  final bool allowEmpty;
+  final String? hint;
+  final String? suffix;
+
+  @override
+  State<ParsedField<T>> createState() => _ParsedFieldState<T>();
+}
+
+class _ParsedFieldState<T> extends State<ParsedField<T>> {
+  late final TextEditingController _ctrl = TextEditingController(text: widget.initialText);
+  bool _invalid = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _typed(String text) {
+    if (text.trim().isEmpty) {
+      setState(() => _invalid = !widget.allowEmpty);
+      if (widget.allowEmpty) widget.onChanged(null);
+      return;
+    }
+    final v = widget.parse(text);
+    setState(() => _invalid = v == null);
+    if (v != null) widget.onChanged(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _ctrl,
+      onChanged: _typed,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        helperText: widget.hint,
+        suffixText: widget.suffix,
+        errorText: _invalid ? 'Valor inválido' : null,
+      ),
     );
   }
 }

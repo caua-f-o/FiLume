@@ -4,8 +4,10 @@ Compressor e divisor de vídeos para desktop, feito em Flutter (Material 3). *Fi
 
 | Módulo | Ferramentas |
 | --- | --- |
-| Vídeo | **Compressor** e **splitter** prontos · conversor, cortador, merger, cropper e mux em breve |
-| Áudio, Imagem, Documentos | em breve |
+| Vídeo | Compressor, splitter, conversor, cortador, merger, cropper e mux — **todos prontos** |
+| Áudio | Conversor, compressor, mixer, splitter e merger — **todos prontos** |
+| Documentos | PDF: comprimir, dividir, unir, organizar páginas, PDF ↔ imagens e senha — **prontos** |
+| Imagem | em breve |
 
 ## Como obter o FiLume.exe
 
@@ -31,6 +33,39 @@ Cada novo envio para a branch principal gera uma versão nova em Releases.
 - Sem recodificar: rápido e sem perda. Os cortes caem em keyframes.
 - Por tamanho, o vídeo é analisado antes para nenhuma parte passar do limite.
 
+**Converter**
+- MP4, MKV, MOV ou WebM. Se os codecs já cabem no formato, só troca o contêiner (segundos, sem perda); senão recodifica só o necessário.
+
+**Cortar**
+- Mantém um trecho (início e fim). Rápido (sem recodificar, cai no keyframe) ou exato (recodifica o trecho).
+
+**Unir**
+- Junta os vídeos na ordem da lista. Mesmo formato: sem recodificar. Formatos diferentes: recodifica no formato do primeiro.
+
+**Recortar**
+- Por proporção (16:9, 9:16, 1:1...), por margens em pixels ou removendo barras pretas automaticamente, com prévia.
+
+**Mux**
+- Troca, adiciona ou remove o áudio e adiciona legenda (.srt, .ass, .vtt) sem recodificar o vídeo.
+
+**Áudio**
+- Converter (MP3, M4A, Opus, OGG, FLAC, WAV), também extraindo o áudio de vídeos.
+- Comprimir por bitrate, tamanho final ou porcentagem.
+- Mixar vários áudios ao mesmo tempo, com volume por faixa.
+- Dividir por tamanho, duração ou número de partes, sem recodificar.
+- Unir na ordem da lista (sem recodificar quando os formatos batem).
+
+**Documentos (PDF)**
+- Comprimir em quatro níveis (reduz a resolução das imagens), com opção de tons de cinza.
+- Dividir a cada N páginas, por tamanho máximo em MB, por intervalos ou uma página por arquivo.
+- Unir vários PDFs na ordem da lista.
+- Organizar: mesa com miniaturas para arrastar, girar, excluir e misturar páginas de vários PDFs.
+- PDF → imagens (JPG/PNG) e imagens → PDF.
+- Proteger com senha ou remover a senha (sabendo a atual).
+
+**Prévia com player**
+- Cortar e Recortar têm um player embutido: marque início e fim no ponto em que o vídeo está, e veja a área de recorte por cima da imagem.
+
 ## Vídeos longos e pesados
 
 - O app nunca carrega o vídeo na memória: quem lê e grava é o FFmpeg, em streaming.
@@ -44,6 +79,13 @@ Cada novo envio para a branch principal gera uma versão nova em Releases.
 lib/core/ffmpeg.dart     localizar FFmpeg, ler metadados, rodar processos
 lib/core/compress.dart   opções e comando de compressão
 lib/core/split.dart      opções e planejamento dos cortes
+lib/core/convert.dart    conversor · trim.dart cortador · merge.dart merger
+lib/core/crop.dart       cropper · mux.dart mux
+lib/core/streams.dart    compatibilidade de codecs/contêineres e recodificação
+lib/core/audio.dart      ferramentas de áudio
+lib/core/pdf.dart        ferramentas de PDF · pdf_workspace.dart organizador e miniaturas
+lib/ui/modules.dart      lista de ferramentas de cada módulo
+lib/ui/expressive.dart   componentes no estilo Material 3 Expressive
 lib/core/state.dart      estado do app e fila de tarefas
 lib/ui/                  telas (Material 3)
 tool/patch_windows.dart  título, ícone e tamanho mínimo da janela
@@ -55,3 +97,5 @@ Para usar outro FFmpeg, defina a variável de ambiente `FILUME_FFMPEG_DIR` com a
 ## Licenças
 
 O FFmpeg embutido é o build GPL de <https://github.com/BtbN/FFmpeg-Builds>, distribuído como executável separado.
+
+O módulo Documentos usa o qpdf (Apache 2.0) e o Ghostscript (AGPL v3), também como executáveis separados, baixados no build por `tool/patch_windows.dart` para a pasta `pdftools`.

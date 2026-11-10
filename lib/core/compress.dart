@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'ffmpeg.dart';
 import 'format.dart';
 import 'job.dart';
+import 'streams.dart';
 
 enum VCodec {
   h264('H.264', 'Mais compatível', 23),
@@ -157,12 +158,16 @@ String _preset(String enc, Speed s) {
   return const ['speed', 'balanced', 'quality'][i]; // amf
 }
 
-List<String> _videoArgs(
+/// Argumentos de codificação de vídeo. [preFilters] entram antes de
+/// escala/FPS; com [noVf] nenhum `-vf` é emitido (para quem usa filter_complex).
+List<String> videoEncodeArgs(
   CompressSettings s,
   MediaInfo info,
   String enc,
   int videoBps, {
   int pass = 0,
+  List<String> preFilters = const [],
+  bool noVf = false,
 }) {
   final a = <String>['-c:v', enc];
   final threads = math.max(1, Platform.numberOfProcessors ~/ 2);
@@ -210,7 +215,7 @@ List<String> _videoArgs(
   if (x265.isNotEmpty) a.addAll(['-x265-params', x265.join(':')]);
   if (svt.isNotEmpty) a.addAll(['-svtav1-params', svt.join(':')]);
 
-  final filters = <String>[];
+  final filters = <String>[...preFilters];
   final shortSide = math.min(info.width, info.height);
   if (s.maxHeight > 0 && shortSide > s.maxHeight) {
     filters.add(info.width >= info.height
@@ -218,7 +223,7 @@ List<String> _videoArgs(
         : 'scale=${s.maxHeight}:-2');
   }
   if (s.maxFps > 0 && info.fps > s.maxFps + 0.5) filters.add('fps=${s.maxFps}');
-  if (filters.isNotEmpty) a.addAll(['-vf', filters.join(',')]);
+  if (filters.isNotEmpty && !noVf) a.addAll(['-vf', filters.join(',')]);
 
   // H.264 em 8 bits toca em qualquer lugar; HEVC/AV1 preservam a profundidade.
   if (s.codec == VCodec.h264) a.addAll(['-pix_fmt', 'yuv420p']);
@@ -268,7 +273,7 @@ Job buildCompressJob(MediaInfo info, CompressSettings settings, String? outDir, 
             [
               ...input,
               '-map', '0:${info.videoIndex}',
-              ..._videoArgs(s, info, enc, videoBps, pass: 1),
+              ...videoEncodeArgs(s, info, enc, videoBps, pass: 1),
               '-an', '-sn', '-dn', '-f', 'null', Platform.isWindows ? 'NUL' : '/dev/null',
             ],
             workingDirectory: work!.path,
@@ -280,7 +285,7 @@ Job buildCompressJob(MediaInfo info, CompressSettings settings, String? outDir, 
         final args = <String>[
           ...input,
           '-map', '0:${info.videoIndex}',
-          ..._videoArgs(s, info, enc, videoBps, pass: twoPass ? 2 : 0),
+          ...videoEncodeArgs(s, info, enc, videoBps, pass: twoPass ? 2 : 0),
         ];
         if (s.audio == AudioMode.none) {
           args.add('-an');
@@ -290,11 +295,7 @@ Job buildCompressJob(MediaInfo info, CompressSettings settings, String? outDir, 
               ? ['-c:a', 'copy']
               : ['-c:a', 'aac', '-b:a', '${s.audio.kbps}k']);
         }
-        if (s.container == OutContainer.mkv) {
-          args.addAll(['-map', '0:s?', '-c:s', 'copy']);
-        } else {
-          args.add('-sn');
-        }
+        args.addAll(subtitleArgs(info, s.container.ext));
         args.addAll(['-dn', '-map_metadata', '0', '-map_chapters', '0']);
         // faststart regrava o arquivo no final; em vídeos gigantes não compensa.
         if (s.container != OutContainer.mkv && info.sizeBytes < 8 * 1024 * 1024 * 1024) {

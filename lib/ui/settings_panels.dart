@@ -257,12 +257,15 @@ class CompressSettingsView extends StatelessWidget {
 }
 
 class SplitSettingsView extends StatelessWidget {
-  const SplitSettingsView({super.key, required this.state});
+  const SplitSettingsView({super.key, required this.state, this.audio = false});
   final AppState state;
+
+  /// Painel do módulo de áudio (usa as próprias configurações e textos).
+  final bool audio;
 
   @override
   Widget build(BuildContext context) {
-    final s = state.split;
+    final s = audio ? state.audioSplit : state.split;
     final t = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -355,10 +358,14 @@ class SplitSettingsView extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Divide sem recodificar: rápido, sem perda de qualidade e quase sem usar CPU ou '
-                    'memória, mesmo em vídeos de muitos GB. Os cortes caem no keyframe mais próximo, '
-                    'então a duração de cada parte pode variar alguns segundos.'
-                    '${s.mode == SplitMode.size ? ' Por tamanho, o vídeo é analisado antes para nenhuma parte passar do limite.' : ''}',
+                    audio
+                        ? 'Divide sem recodificar: rápido e sem perda de qualidade, mesmo em gravações de '
+                            'muitas horas. De um vídeo, só o áudio é extraído.'
+                            '${s.mode == SplitMode.size ? ' Por tamanho, o áudio é analisado antes para nenhuma parte passar do limite.' : ''}'
+                        : 'Divide sem recodificar: rápido, sem perda de qualidade e quase sem usar CPU ou '
+                            'memória, mesmo em vídeos de muitos GB. Os cortes caem no keyframe mais próximo, '
+                            'então a duração de cada parte pode variar alguns segundos.'
+                            '${s.mode == SplitMode.size ? ' Por tamanho, o vídeo é analisado antes para nenhuma parte passar do limite.' : ''}',
                     style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSecondaryContainer),
                   ),
                 ),
@@ -368,7 +375,7 @@ class SplitSettingsView extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'As partes vão para uma pasta "<nome do vídeo>_partes".',
+          'As partes vão para uma pasta "<nome do arquivo>_partes".',
           style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
         ),
       ],

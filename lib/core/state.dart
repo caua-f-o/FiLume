@@ -3,16 +3,141 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:path/path.dart' as p;
+
+import 'audio.dart';
 import 'compress.dart';
+import 'convert.dart';
+import 'crop.dart';
 import 'ffmpeg.dart';
 import 'job.dart';
+import 'merge.dart';
+import 'mux.dart';
+import 'pdf.dart';
+import 'pdf_workspace.dart';
 import 'split.dart';
+import 'streams.dart';
+import 'trim.dart';
 
 class InputItem {
   InputItem(this.path);
   final String path;
   MediaInfo? info;
   String? error;
+}
+
+const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff', 'gif'];
+
+/// Lista de arquivos de um módulo.
+class InputList {
+  InputList(this._app, {required this.audioModule, this.docs = false});
+  final AppState _app;
+
+  /// No módulo de áudio basta ter uma faixa de áudio (vídeos também servem).
+  final bool audioModule;
+
+  /// Lista do módulo Documentos: aceita PDFs e imagens.
+  final bool docs;
+  final List<InputItem> items = [];
+  InputItem? _selected;
+  bool _probing = false;
+
+  List<MediaInfo> get ready => [
+        for (final i in items)
+          if (i.info != null) i.info!,
+      ];
+
+  /// Arquivo usado nas prévias: o que foi clicado, ou o primeiro da lista.
+  MediaInfo? get preview {
+    if (_selected?.info != null && items.contains(_selected)) return _selected!.info;
+    final r = ready;
+    return r.isEmpty ? null : r.first;
+  }
+
+  void select(InputItem item) {
+    _selected = item;
+    _app.touch();
+  }
+
+  void addPaths(Iterable<String> paths) {
+    for (final path in paths) {
+      if (items.any((i) => i.path == path)) continue;
+      if (!File(path).existsSync()) continue; // ignora pastas
+      items.add(InputItem(path));
+    }
+    _app.touch();
+    probePending();
+  }
+
+  void remove(InputItem item) {
+    items.remove(item);
+    _app.touch();
+  }
+
+  void clear() {
+    items.clear();
+    _app.touch();
+  }
+
+  /// Muda a ordem na lista (importa para unir).
+  void move(InputItem item, int delta) {
+    final i = items.indexOf(item), j = i + delta;
+    if (i < 0 || j < 0 || j >= items.length) return;
+    items
+      ..removeAt(i)
+      ..insert(j, item);
+    _app.touch();
+  }
+
+  Future<void> probePending() async {
+    final t = _app.tools;
+    if (_probing || t == null || _app.toolsLoading) return;
+    _probing = true;
+    try {
+      while (true) {
+        final pending = items.where((i) => i.info == null && i.error == null).toList();
+        if (pending.isEmpty) break;
+        final item = pending.first;
+        try {
+          if (docs) {
+            final ext = p.extension(item.path).toLowerCase();
+            if (ext == '.pdf') {
+              final pdf = _app.pdf;
+              if (pdf == null) {
+                item.error = 'As ferramentas de PDF não foram encontradas.';
+              } else {
+                item.info = await pdf.probe(item.path);
+              }
+            } else if (imageExts.contains(ext.replaceFirst('.', ''))) {
+              final img = await t.probe(item.path);
+              if (img.hasVideo && img.width > 0) {
+                item.info = MediaInfo.image(img);
+              } else {
+                item.error = 'Não foi possível ler esta imagem.';
+              }
+            } else {
+              item.error = 'Aqui entram PDFs e imagens.';
+            }
+            _app.touch();
+            continue;
+          }
+          final info = await t.probe(item.path);
+          if (audioModule && info.audioCount == 0) {
+            item.error = 'Este arquivo não tem faixa de áudio.';
+          } else if (!audioModule && !info.hasVideo) {
+            item.error = 'Este arquivo não tem faixa de vídeo.';
+          } else {
+            item.info = info;
+          }
+        } catch (e) {
+          item.error = e is FfError ? e.message : 'Não foi possível ler este arquivo.';
+        }
+        _app.touch();
+      }
+    } finally {
+      _probing = false;
+    }
+  }
 }
 
 /// Fila de tarefas: roda uma por vez, para o uso de CPU/RAM/disco ficar
@@ -135,24 +260,61 @@ class AppState extends ChangeNotifier {
   bool toolsLoading = true;
   EncoderCaps caps = const EncoderCaps({});
 
-  final List<InputItem> inputs = [];
+  late final InputList video = InputList(this, audioModule: false);
+  late final InputList audio = InputList(this, audioModule: true);
+  late final InputList docs = InputList(this, audioModule: false, docs: true);
+
+  // Módulo de documentos
+  PdfTools? pdf;
+  final PdfCompressSettings pdfCompress = PdfCompressSettings();
+  final PdfSplitSettings pdfSplit = PdfSplitSettings();
+  final PdfConvertSettings pdfConvert = PdfConvertSettings();
+  final PdfPasswordSettings pdfPassword = PdfPasswordSettings();
+  final Organizer organizer = Organizer();
+  late final PdfThumbs thumbs = PdfThumbs(touch);
   String? outputDir;
   final CompressSettings compress = CompressSettings();
   final SplitSettings split = SplitSettings();
-  final JobQueue queue = JobQueue();
+  final ConvertSettings convert = ConvertSettings();
+  final TrimSettings trim = TrimSettings();
+  final MergeSettings merge = MergeSettings();
+  final CropSettings crop = CropSettings();
+  final MuxSettings mux = MuxSettings();
 
-  bool _probing = false;
+  // Módulo de áudio
+  final AudioOutSettings audioOut = AudioOutSettings();
+  final AudioCompressSettings audioCompress = AudioCompressSettings();
+  final SplitSettings audioSplit = SplitSettings()..sizeMb = 25;
+  final AudioMergeSettings audioMerge = AudioMergeSettings();
+  final MixSettings mix = MixSettings();
+
+  /// Ferramenta aberta em cada módulo (lembrada ao trocar de módulo).
+  final Map<String, int> toolIndex = {};
+
+  /// Muda quando um campo de texto precisa ser recriado com um valor novo.
+  int fieldRevision = 0;
+
+  /// Qualidade usada pelas ferramentas que precisam recodificar.
+  final ReencodeSettings reencode = ReencodeSettings();
+  String? muxAudioError;
+
+  Directory? _thumbDir;
+  final Map<String, Future<String?>> _thumbs = {};
+  final JobQueue queue = JobQueue();
 
   Future<void> init() async {
     toolsLoading = true;
     notifyListeners();
     tools = await FfTools.locate();
+    pdf = await PdfTools.locate();
     queue.tools = tools;
     toolsLoading = false;
     notifyListeners();
     final t = tools;
     if (t == null) return;
-    _probeNext();
+    video.probePending();
+    audio.probePending();
+    docs.probePending();
     caps = EncoderCaps(await t.detectEncoders());
     if (!caps.supports(compress.codec)) {
       for (final c in VCodec.values) {
@@ -171,60 +333,62 @@ class AppState extends ChangeNotifier {
   /// Avisa a interface depois de mexer em [compress], [split] ou [outputDir].
   void touch() => notifyListeners();
 
-  void addPaths(Iterable<String> paths) {
-    for (final path in paths) {
-      if (inputs.any((i) => i.path == path)) continue;
-      if (!File(path).existsSync()) continue; // ignora pastas
-      inputs.add(InputItem(path));
-    }
-    notifyListeners();
-    _probeNext();
-  }
-
-  void removeInput(InputItem item) {
-    inputs.remove(item);
-    notifyListeners();
-  }
-
-  void clearInputs() {
-    inputs.clear();
-    notifyListeners();
-  }
-
-  List<MediaInfo> get readyInputs => [
-        for (final i in inputs)
-          if (i.info != null) i.info!,
-      ];
-
-  Future<void> _probeNext() async {
+  /// Lê o arquivo de áudio escolhido para o mux.
+  Future<void> setMuxAudio(String? path) async {
+    mux.audio = null;
+    muxAudioError = null;
     final t = tools;
-    if (_probing || t == null) return;
-    _probing = true;
-    try {
-      while (true) {
-        final pending = inputs.where((i) => i.info == null && i.error == null).toList();
-        if (pending.isEmpty) break;
-        final item = pending.first;
-        try {
-          item.info = await t.probe(item.path);
-          if (!item.info!.hasVideo) {
-            item
-              ..info = null
-              ..error = 'Este arquivo não tem faixa de vídeo.';
-          }
-        } catch (e) {
-          item.error = e is FfError ? e.message : 'Não foi possível ler este arquivo.';
+    if (path != null && t != null) {
+      try {
+        final info = await t.probe(path);
+        if (info.audioCount == 0) {
+          muxAudioError = '"${p.basename(path)}" não tem faixa de áudio.';
+        } else {
+          mux.audio = info;
         }
-        notifyListeners();
+      } catch (_) {
+        muxAudioError = 'Não foi possível ler "${p.basename(path)}".';
       }
-    } finally {
-      _probing = false;
     }
+    notifyListeners();
+  }
+
+  /// Miniatura (um quadro pequeno) para a prévia do recorte. Fica em cache.
+  Future<String?> thumbnail(MediaInfo info) => _thumbs[info.path] ??= _makeThumb(info);
+
+  Future<String?> _makeThumb(MediaInfo info) async {
+    final t = tools;
+    if (t == null) return null;
+    try {
+      final dir = _thumbDir ??= await Directory.systemTemp.createTemp('filume_thumb_');
+      final out = p.join(dir.path, '${_thumbs.length}_${DateTime.now().microsecondsSinceEpoch}.jpg');
+      final r = await Process.run(t.ffmpeg, [
+        '-hide_banner', '-nostdin', '-v', 'error', '-y',
+        '-ss', (info.duration * 0.3).toStringAsFixed(2),
+        '-i', info.path,
+        '-map', '0:${info.videoIndex}',
+        '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '5',
+        out,
+      ]).timeout(const Duration(seconds: 30));
+      return r.exitCode == 0 && File(out).existsSync() ? out : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void cleanup() {
+    thumbs.dispose();
+    try {
+      _thumbDir?.deleteSync(recursive: true);
+    } catch (_) {}
+    _thumbDir = null;
+    _thumbs.clear();
   }
 
   @override
   void dispose() {
     queue.cancelAll();
+    cleanup();
     super.dispose();
   }
 }

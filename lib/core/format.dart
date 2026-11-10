@@ -24,6 +24,17 @@ String fmtDuration(double seconds) {
   return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
 }
 
+/// Como [fmtDuration], mas com décimos de segundo quando existem (ex.: 1:05,4).
+String fmtDurationPrecise(double seconds) {
+  if (seconds.isNaN || seconds.isInfinite || seconds < 0) seconds = 0;
+  final tenths = (seconds * 10).round();
+  if (tenths % 10 == 0) return fmtDuration(tenths / 10);
+  final whole = tenths ~/ 10;
+  final h = whole ~/ 3600, m = (whole % 3600) ~/ 60, s = whole % 60;
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${h > 0 ? '$h:${two(m)}' : '$m'}:${two(s)},${tenths % 10}';
+}
+
 String fmtBitrate(int bps) =>
     bps >= 1000000 ? '${_dec(bps / 1e6, 1)} Mb/s' : '${(bps / 1000).round()} kb/s';
 

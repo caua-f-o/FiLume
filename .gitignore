@@ -1,0 +1,17 @@
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.idea/
+*.iml
+.vscode/
+pubspec.lock
+# O runner do Windows é gerado no build (flutter create) e personalizado por tool/patch_windows.dart
+/windows/
+/test/
+.metadata
+# Motores de PDF baixados no build
+/third_party/

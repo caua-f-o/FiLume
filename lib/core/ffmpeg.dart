@@ -34,7 +34,62 @@ class MediaInfo {
     required this.audioCount,
     required this.aCodec,
     required this.audioBitrate,
+    this.aCodecs = const [],
+    this.subs = const [],
+    this.sampleRate = 0,
+    this.channels = 0,
+    this.pixFmt,
+    this.audioIndex,
+    this.kind = 'media',
+    this.pages = 0,
+    this.encrypted = false,
   });
+
+  /// Um PDF (lido pelo qpdf, não pelo ffprobe).
+  MediaInfo.pdf({required this.path, required this.sizeBytes, required this.pages, this.encrypted = false})
+      : kind = 'pdf',
+        duration = 0,
+        startTime = 0,
+        bitrate = 0,
+        videoIndex = null,
+        vCodec = null,
+        width = 0,
+        height = 0,
+        fps = 0,
+        audioCount = 0,
+        aCodec = null,
+        audioBitrate = 0,
+        aCodecs = const [],
+        subs = const [],
+        sampleRate = 0,
+        channels = 0,
+        pixFmt = null,
+        audioIndex = null;
+
+  /// Uma imagem estática (para "imagens → PDF").
+  MediaInfo.image(MediaInfo src)
+      : kind = 'image',
+        path = src.path,
+        sizeBytes = src.sizeBytes,
+        duration = 0,
+        startTime = 0,
+        bitrate = 0,
+        videoIndex = src.videoIndex,
+        vCodec = src.vCodec,
+        width = src.width,
+        height = src.height,
+        fps = 0,
+        audioCount = 0,
+        aCodec = null,
+        audioBitrate = 0,
+        aCodecs = const [],
+        subs = const [],
+        sampleRate = 0,
+        channels = 0,
+        pixFmt = src.pixFmt,
+        audioIndex = null,
+        pages = 1,
+        encrypted = false;
 
   final String path;
   final int sizeBytes;
@@ -51,6 +106,32 @@ class MediaInfo {
 
   /// Soma do bitrate de todas as faixas de áudio (0 se desconhecido).
   final int audioBitrate;
+
+  /// Codec de cada faixa de áudio, na ordem do arquivo.
+  final List<String> aCodecs;
+
+  /// Legendas: (índice do stream, codec).
+  final List<(int, String)> subs;
+
+  /// Da primeira faixa de áudio.
+  final int sampleRate;
+  final int channels;
+  final String? pixFmt;
+
+  /// Índice do primeiro stream de áudio.
+  final int? audioIndex;
+
+  /// 'media' (áudio/vídeo), 'pdf' ou 'image'.
+  final String kind;
+
+  /// Número de páginas (PDF).
+  final int pages;
+
+  /// PDF que só abre com senha.
+  final bool encrypted;
+
+  bool get isPdf => kind == 'pdf';
+  bool get isImage => kind == 'image';
 
   bool get hasVideo => videoIndex != null;
 }
@@ -119,17 +200,28 @@ class FfTools {
     final streams = ((j['streams'] as List?) ?? const []).cast<Map<String, dynamic>>();
 
     Map<String, dynamic>? video;
-    var audioCount = 0, audioBitrate = 0;
+    var audioCount = 0, audioBitrate = 0, sampleRate = 0, channels = 0;
     String? aCodec;
+    final aCodecs = <String>[];
+    final subs = <(int, String)>[];
+    int? audioIndex;
     for (final s in streams) {
       final type = s['codec_type'];
       if (type == 'video') {
         final disp = (s['disposition'] as Map<String, dynamic>?) ?? const {};
         if (video == null && disp['attached_pic'] != 1) video = s;
       } else if (type == 'audio') {
+        if (audioCount == 0) {
+          audioIndex = _num(s['index']).round();
+          sampleRate = _num(s['sample_rate']).round();
+          channels = _num(s['channels']).round();
+        }
         audioCount++;
         aCodec ??= s['codec_name']?.toString();
+        aCodecs.add((s['codec_name'] ?? '?').toString());
         audioBitrate += _num(s['bit_rate']).round();
+      } else if (type == 'subtitle') {
+        subs.add((_num(s['index']).round(), (s['codec_name'] ?? '?').toString()));
       }
     }
 
@@ -146,6 +238,22 @@ class FfTools {
     var fps = video == null ? 0.0 : _rate(video['avg_frame_rate']);
     if (video != null && (fps <= 0 || fps > 1000)) fps = _rate(video['r_frame_rate']);
 
+    // Vídeos de celular vêm "deitados" com uma rotação nos metadados; o FFmpeg
+    // gira sozinho, então guardamos as dimensões já como aparecem na tela.
+    var width = video == null ? 0 : _num(video['width']).round();
+    var height = video == null ? 0 : _num(video['height']).round();
+    if (video != null) {
+      var rotation = _num((video['tags'] as Map<String, dynamic>?)?['rotate']);
+      for (final sd in ((video['side_data_list'] as List?) ?? const [])) {
+        if (sd is Map && sd['rotation'] != null) rotation = _num(sd['rotation']);
+      }
+      if (rotation.round().abs() % 180 == 90) {
+        final w = width;
+        width = height;
+        height = w;
+      }
+    }
+
     return MediaInfo(
       path: path,
       sizeBytes: size,
@@ -154,12 +262,18 @@ class FfTools {
       bitrate: bitrate,
       videoIndex: video == null ? null : _num(video['index']).round(),
       vCodec: video?['codec_name']?.toString(),
-      width: video == null ? 0 : _num(video['width']).round(),
-      height: video == null ? 0 : _num(video['height']).round(),
+      width: width,
+      height: height,
       fps: fps,
       audioCount: audioCount,
       aCodec: aCodec,
       audioBitrate: audioBitrate,
+      aCodecs: aCodecs,
+      subs: subs,
+      sampleRate: sampleRate,
+      channels: channels,
+      pixFmt: video?['pix_fmt']?.toString(),
+      audioIndex: audioIndex,
     );
   }
 
@@ -167,7 +281,7 @@ class FfTools {
   /// testados com um encode minúsculo, porque constar na lista do FFmpeg não
   /// significa que o hardware/driver existe.
   Future<Set<String>> detectEncoders() async {
-    const cpu = ['libx264', 'libx265', 'libsvtav1'];
+    const cpu = ['libx264', 'libx265', 'libsvtav1', 'libvpx-vp9', 'libopus', 'libvorbis', 'libmp3lame'];
     const gpu = [
       'h264_nvenc', 'hevc_nvenc', 'av1_nvenc',
       'h264_qsv', 'hevc_qsv', 'av1_qsv',
@@ -210,6 +324,7 @@ class FfRun {
     List<String> args, {
     String? workingDirectory,
     void Function(String line)? onStdoutLine,
+    void Function(String line)? onStderrLine,
   }) async {
     if (canceled) throw const JobCanceled();
     final proc = await Process.start(exe, args, workingDirectory: workingDirectory);
@@ -220,6 +335,7 @@ class FfRun {
         .transform(const LineSplitter())
         .listen((line) {
       if (line.trim().isEmpty) return;
+      onStderrLine?.call(line);
       errorTail.add(line);
       if (errorTail.length > 25) errorTail.removeAt(0);
     }).asFuture<void>();

@@ -27,8 +27,9 @@ class SplitSettings {
       };
 
   /// Estimativa de quantas partes vão sair (só para a interface).
-  int estimateParts(MediaInfo info) => switch (mode) {
-        SplitMode.size => sizeMb <= 0 ? 0 : (info.sizeBytes / (sizeMb * bytesPerMb)).ceil(),
+  int estimateParts(MediaInfo info, {int? sizeBytes}) => switch (mode) {
+        SplitMode.size =>
+          sizeMb <= 0 ? 0 : ((sizeBytes ?? info.sizeBytes) / (sizeMb * bytesPerMb)).ceil(),
         SplitMode.duration => seconds <= 0 ? 0 : (info.duration / seconds).ceil(),
         SplitMode.parts => parts,
       };
@@ -97,12 +98,15 @@ class SizeCutPlanner {
   }
 }
 
-Future<(List<double>, bool)> _planSizeCuts(JobCtx ctx, MediaInfo info, int limitBytes) async {
-  final planner = SizeCutPlanner(info.videoIndex, limitBytes ~/ 400);
+Future<(List<double>, bool)> _planSizeCuts(
+    JobCtx ctx, MediaInfo info, int limitBytes, bool audioOnly) async {
+  final ref = audioOnly ? info.audioIndex : info.videoIndex;
+  final planner = SizeCutPlanner(ref, limitBytes ~/ 400);
   final code = await ctx.run.exec(
     ctx.tools.ffprobe,
     [
       '-v', 'error',
+      if (audioOnly) ...['-select_streams', 'a'],
       '-show_entries', 'packet=stream_index,pts_time,dts_time,size,flags',
       '-of', 'csv=p=0',
       info.path,
@@ -116,7 +120,7 @@ Future<(List<double>, bool)> _planSizeCuts(JobCtx ctx, MediaInfo info, int limit
       final pts = double.tryParse(f[1]);
       planner.addPacket(stream, pts, size, f[4].startsWith('K'));
       final t = pts ?? double.tryParse(f[2]);
-      if (t != null && info.duration > 0 && stream == (info.videoIndex ?? stream)) {
+      if (t != null && info.duration > 0 && stream == (ref ?? stream)) {
         ctx.report((t - info.startTime) / info.duration * 0.5, stage: 'Analisando pontos de corte');
       }
     },
@@ -126,8 +130,12 @@ Future<(List<double>, bool)> _planSizeCuts(JobCtx ctx, MediaInfo info, int limit
   }
   // Overhead real do contêiner deste arquivo (MPEG-TS, por exemplo, passa de 8%),
   // mais 1,5% + 64 KB de folga para cabeçalhos e índice de cada parte.
-  var overhead = info.sizeBytes / planner.totalBytes;
+  // Extraindo só o áudio de um vídeo, o tamanho do arquivo não serve de base.
+  var overhead = audioOnly && info.hasVideo ? 1.03 : info.sizeBytes / planner.totalBytes;
   if (overhead < 1) overhead = 1;
+  if (planner.totalBytes * overhead <= limitBytes) {
+    throw FfError('O áudio já cabe em ${fmtBytes(limitBytes)} — não há o que dividir.');
+  }
   var budget = (limitBytes / overhead * 0.985).floor() - 64 * 1024;
   if (budget < limitBytes ~/ 4) budget = limitBytes ~/ 4;
   // 1 ms de folga contra arredondamento: o corte acontece no primeiro keyframe
@@ -139,7 +147,23 @@ Future<(List<double>, bool)> _planSizeCuts(JobCtx ctx, MediaInfo info, int limit
   return (cuts, planner.oversized);
 }
 
-Job buildSplitJob(MediaInfo info, SplitSettings settings, String? outDir) {
+/// Extensão para copiar só o áudio de [info] sem recodificar.
+String audioCopyExt(MediaInfo info) {
+  final ext = p.extension(info.path).replaceFirst('.', '').toLowerCase();
+  if (!info.hasVideo && _audioSegmentExts.contains(ext)) return ext;
+  return switch (info.aCodec) {
+    'aac' || 'alac' => 'm4a',
+    'mp3' => 'mp3',
+    'opus' => 'opus',
+    'vorbis' => 'ogg',
+    'flac' => 'flac',
+    _ => 'mka',
+  };
+}
+
+const _audioSegmentExts = {'mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus', 'wma', 'mka', 'ac3'};
+
+Job buildSplitJob(MediaInfo info, SplitSettings settings, String? outDir, {bool audioOnly = false}) {
   final s = settings.copy();
   return Job(
     title: p.basename(info.path),
@@ -155,10 +179,10 @@ Job buildSplitJob(MediaInfo info, SplitSettings settings, String? outDir) {
       switch (s.mode) {
         case SplitMode.size:
           if (limitBytes < bytesPerMb ~/ 2) throw FfError('O tamanho por parte precisa ser de pelo menos 0,5 MB.');
-          if (info.sizeBytes <= limitBytes) {
+          if (info.sizeBytes <= limitBytes && !(audioOnly && info.hasVideo)) {
             throw FfError('O vídeo já cabe em ${fmtBytes(limitBytes)} — não há o que dividir.');
           }
-          final (cuts, over) = await _planSizeCuts(ctx, info, limitBytes);
+          final (cuts, over) = await _planSizeCuts(ctx, info, limitBytes, audioOnly);
           if (cuts.isEmpty) {
             throw FfError('Não há keyframes suficientes para dividir este vídeo sem recodificar.');
           }
@@ -179,7 +203,11 @@ Job buildSplitJob(MediaInfo info, SplitSettings settings, String? outDir) {
 
       final base = p.basenameWithoutExtension(info.path);
       var ext = p.extension(info.path).replaceFirst('.', '').toLowerCase();
-      if (!_segmentExts.contains(ext)) ext = 'mkv';
+      if (audioOnly) {
+        ext = audioCopyExt(info);
+      } else if (!_segmentExts.contains(ext)) {
+        ext = 'mkv';
+      }
       final dir = uniquePath(p.join(outDir ?? p.dirname(info.path), '${base}_partes'), directory: true);
       await Directory(dir).create(recursive: true);
       final pattern = '${p.join(dir, base).replaceAll('%', '%%')}_%03d.$ext';
@@ -189,12 +217,12 @@ Job buildSplitJob(MediaInfo info, SplitSettings settings, String? outDir) {
           ctx.tools,
           [
             '-i', info.path,
-            '-map', '0:v?', '-map', '0:a?', '-map', '0:s?',
+            if (audioOnly) ...['-map', '0:a', '-vn'] else ...['-map', '0:v?', '-map', '0:a?', '-map', '0:s?'],
             '-c', 'copy', '-ignore_unknown',
             '-f', 'segment', ...segmentArgs,
             '-reset_timestamps', '1',
             '-segment_start_number', '1',
-            if (const {'mp4', 'm4v', 'mov'}.contains(ext)) ...[
+            if (const {'mp4', 'm4v', 'mov', 'm4a'}.contains(ext)) ...[
               '-segment_format_options', 'movflags=+faststart',
             ],
             pattern,
@@ -219,8 +247,10 @@ Job buildSplitJob(MediaInfo info, SplitSettings settings, String? outDir) {
       }
       String? warning;
       if (s.mode == SplitMode.size && (oversized || largest > limitBytes)) {
-        warning = 'Alguma parte passou do limite (maior: ${fmtBytes(largest)}): o vídeo tem trechos '
-            'longos sem keyframe. Comprima antes para conseguir partes menores.';
+        warning = audioOnly
+            ? 'Alguma parte passou do limite (maior: ${fmtBytes(largest)}).'
+            : 'Alguma parte passou do limite (maior: ${fmtBytes(largest)}): o vídeo tem trechos '
+                'longos sem keyframe. Comprima antes para conseguir partes menores.';
       }
       return JobResult(
         '$count ${count == 1 ? 'parte' : 'partes'} · maior com ${fmtBytes(largest)}',
