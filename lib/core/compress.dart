@@ -255,7 +255,8 @@ Job buildCompressJob(MediaInfo info, CompressSettings settings, String? outDir, 
         }
       }
 
-      final dir = outDir ?? p.dirname(info.path);
+      // Absoluto: as duas passadas rodam dentro de uma pasta temporária.
+      final dir = p.absolute(outDir ?? p.dirname(info.path));
       await Directory(dir).create(recursive: true);
       final out = uniquePath(
           p.join(dir, '${p.basenameWithoutExtension(info.path)}_filume.${s.container.ext}'));

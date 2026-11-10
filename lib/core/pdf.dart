@@ -52,6 +52,7 @@ class PdfTools {
 
   /// Lê número de páginas e se o PDF exige senha.
   Future<MediaInfo> probe(String path) async {
+    path = p.absolute(path);
     final size = File(path).lengthSync();
     final r = await Process.run(qpdf, ['--show-npages', path]);
     if (r.exitCode == 0 || r.exitCode == 3) {

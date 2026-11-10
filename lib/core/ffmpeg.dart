@@ -181,6 +181,8 @@ class FfTools {
   }
 
   Future<MediaInfo> probe(String path) async {
+    // Caminho absoluto: algumas etapas rodam com outra pasta de trabalho.
+    path = p.absolute(path);
     final r = await Process.run(
       ffprobe,
       ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', path],
