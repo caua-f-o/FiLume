@@ -1,101 +1,125 @@
-# FiLume
+<p align="center">
+  <img src="docs/banner.png" alt="FiLume — comprima, divida e converta vídeos, áudios e PDFs" width="100%">
+</p>
 
-Compressor e divisor de vídeos para desktop, feito em Flutter (Material 3). *File* + *lume*, de vagalume.
+<p align="center">
+  <a href="https://github.com/caua-f-o/FiLume/releases/latest"><img alt="Última versão" src="https://img.shields.io/github/v/release/caua-f-o/FiLume?label=vers%C3%A3o&color=b4d43c"></a>
+  <a href="https://github.com/caua-f-o/FiLume/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/caua-f-o/FiLume/build.yml?branch=main&label=build"></a>
+  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4">
+  <img alt="Flutter" src="https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter">
+  <a href="https://github.com/caua-f-o/FiLume/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/caua-f-o/FiLume/total?label=downloads"></a>
+</p>
 
-| Módulo | Ferramentas |
+<p align="center">
+  <b><a href="https://github.com/caua-f-o/FiLume/releases/latest">⬇️ Baixar o FiLume para Windows</a></b>
+</p>
+
+---
+
+**FiLume** (*file* + *lume*, de vagalume) é um canivete suíço para arquivos de mídia no desktop: comprime, divide, converte, corta e junta vídeos, áudios e PDFs. Tudo roda no seu computador, sem enviar nada para a internet, e funciona com arquivos de muitos GB sem pesar na memória.
+
+Não precisa instalar nada além do próprio FiLume: o FFmpeg, o qpdf e o Ghostscript já vão dentro do pacote.
+
+## Instalação
+
+1. Baixe o **`FiLume-windows-x64.zip`** da [última versão](https://github.com/caua-f-o/FiLume/releases/latest).
+2. Extraia em qualquer pasta.
+3. Abra o **`FiLume.exe`**.
+
+É portátil: não mexe no registro e pode ficar num pendrive. Para remover, apague a pasta.
+
+## Ferramentas
+
+### 🎬 Vídeo
+
+| Ferramenta | O que faz |
 | --- | --- |
-| Vídeo | Compressor, splitter, conversor, cortador, merger, cropper e mux — **todos prontos** |
-| Áudio | Conversor, compressor, mixer, splitter e merger — **todos prontos** |
-| Documentos | PDF: comprimir, dividir, unir, organizar páginas, PDF ↔ imagens e senha — **prontos** |
-| Imagem | em breve |
+| **Comprimir** | Por qualidade, tamanho final (MB) ou porcentagem. H.264, H.265 e AV1, na CPU ou na GPU (NVIDIA, Intel e AMD detectadas sozinhas). Limite de resolução e FPS. |
+| **Dividir** | Por tamanho de cada parte, por duração ou em N partes. Sem recodificar: rápido e sem perda. |
+| **Converter** | MP4, MKV, MOV ou WebM. Quando os codecs já servem, só troca o contêiner em segundos. |
+| **Cortar** | Mantém um trecho. Player embutido para marcar início e fim; modo rápido (sem perda) ou exato. |
+| **Unir** | Junta vídeos na ordem da lista. Mesmo formato: sem recodificar. |
+| **Recortar** | Por proporção (9:16, 1:1…), por margens ou removendo barras pretas, com prévia ao vivo. |
+| **Mux** | Troca, adiciona ou remove áudio e adiciona legendas (.srt, .ass, .vtt) sem recodificar. |
 
-## Como obter o FiLume.exe
+### 🎧 Áudio
 
-O app é compilado pelo GitHub Actions; não precisa instalar Flutter, Python nem abrir terminal.
+| Ferramenta | O que faz |
+| --- | --- |
+| **Converter** | MP3, M4A, Opus, OGG, FLAC ou WAV. Também extrai o áudio de vídeos. |
+| **Comprimir** | Por bitrate, tamanho final ou porcentagem. |
+| **Mixar** | Sobrepõe vários áudios (voz + trilha), com volume por faixa. |
+| **Dividir** | Por tamanho, duração ou número de partes, sem recodificar. |
+| **Unir** | Junta na ordem da lista. |
 
-1. Crie um repositório em <https://github.com/new> (pode ser privado).
-2. Na página do repositório, clique em **uploading an existing file** e arraste **todo o conteúdo desta pasta**, incluindo a pasta `.github`. Confirme em **Commit changes**.
-3. Abra a aba **Actions** e espere o build "Build FiLume (Windows)" terminar (uns 10 minutos).
-4. Em **Releases**, baixe `FiLume-windows-x64.zip`, extraia e abra `FiLume.exe`. O FFmpeg já vai dentro da pasta `ffmpeg`.
+### 📄 Documentos (PDF)
 
-Cada novo envio para a branch principal gera uma versão nova em Releases.
+| Ferramenta | O que faz |
+| --- | --- |
+| **Comprimir** | Quatro níveis, com opção de tons de cinza. PDFs escaneados chegam a encolher mais de 90%. |
+| **Dividir** | A cada N páginas, por tamanho máximo (anexos de e-mail), por intervalos ou página a página. |
+| **Unir** | Vários PDFs em um só. |
+| **Organizar** | Mesa com miniaturas: arraste, gire, exclua e misture páginas de vários PDFs. |
+| **PDF → Imagens** | JPG ou PNG em 72, 150 ou 300 dpi. |
+| **Imagens → PDF** | Cada imagem vira uma página, em A4 ou no tamanho original. |
+| **Senha** | Protege com AES-256 ou remove a senha (sabendo a atual). |
 
-## O que ele faz
+### 🖼️ Imagem
 
-**Comprimir**
-- Por qualidade, por tamanho final (MB) ou por porcentagem do original.
-- H.264, H.265 e AV1, na CPU ou na GPU (NVIDIA, Intel ou AMD, detectadas sozinhas).
-- Limite de resolução e FPS, escolha de áudio e de formato (MP4, MKV, MOV).
-- Duas passadas para acertar o tamanho-alvo; modo econômico para usar menos CPU e memória.
+Em desenvolvimento: conversor, compressor, redimensionador e rotacionador.
 
-**Dividir**
-- Por tamanho máximo de cada parte, por duração ou por número de partes.
-- Sem recodificar: rápido e sem perda. Os cortes caem em keyframes.
-- Por tamanho, o vídeo é analisado antes para nenhuma parte passar do limite.
+## Feito para arquivos grandes
 
-**Converter**
-- MP4, MKV, MOV ou WebM. Se os codecs já cabem no formato, só troca o contêiner (segundos, sem perda); senão recodifica só o necessário.
+- O app nunca carrega o arquivo na memória: o FFmpeg lê e grava em streaming.
+- Uma tarefa por vez na fila, para CPU, RAM e disco ficarem previsíveis.
+- **Modo econômico** na compressão: usa metade da CPU para você continuar usando o PC.
+- Dividir, cortar, unir, converter e mux evitam recodificar sempre que possível — vídeos de dezenas de GB ficam prontos em segundos.
+- Cancelar ou fechar a janela encerra o processo e apaga o arquivo incompleto.
 
-**Cortar**
-- Mantém um trecho (início e fim). Rápido (sem recodificar, cai no keyframe) ou exato (recodifica o trecho).
+## Para desenvolvedores
 
-**Unir**
-- Junta os vídeos na ordem da lista. Mesmo formato: sem recodificar. Formatos diferentes: recodifica no formato do primeiro.
-
-**Recortar**
-- Por proporção (16:9, 9:16, 1:1...), por margens em pixels ou removendo barras pretas automaticamente, com prévia.
-
-**Mux**
-- Troca, adiciona ou remove o áudio e adiciona legenda (.srt, .ass, .vtt) sem recodificar o vídeo.
-
-**Áudio**
-- Converter (MP3, M4A, Opus, OGG, FLAC, WAV), também extraindo o áudio de vídeos.
-- Comprimir por bitrate, tamanho final ou porcentagem.
-- Mixar vários áudios ao mesmo tempo, com volume por faixa.
-- Dividir por tamanho, duração ou número de partes, sem recodificar.
-- Unir na ordem da lista (sem recodificar quando os formatos batem).
-
-**Documentos (PDF)**
-- Comprimir em quatro níveis (reduz a resolução das imagens), com opção de tons de cinza.
-- Dividir a cada N páginas, por tamanho máximo em MB, por intervalos ou uma página por arquivo.
-- Unir vários PDFs na ordem da lista.
-- Organizar: mesa com miniaturas para arrastar, girar, excluir e misturar páginas de vários PDFs.
-- PDF → imagens (JPG/PNG) e imagens → PDF.
-- Proteger com senha ou remover a senha (sabendo a atual).
-
-**Prévia com player**
-- Cortar e Recortar têm um player embutido: marque início e fim no ponto em que o vídeo está, e veja a área de recorte por cima da imagem.
-
-## Vídeos longos e pesados
-
-- O app nunca carrega o vídeo na memória: quem lê e grava é o FFmpeg, em streaming.
-- A fila roda uma tarefa por vez, então CPU, RAM e disco ficam previsíveis.
-- A análise para dividir por tamanho guarda só uma tabela pequena de keyframes, seja o vídeo de 100 MB ou de 100 GB.
-- Fechar a janela ou cancelar encerra o FFmpeg e apaga o arquivo incompleto.
-
-## Estrutura
+O app é Flutter (Material 3) e usa as ferramentas de linha de comando como processos separados.
 
 ```
-lib/core/ffmpeg.dart     localizar FFmpeg, ler metadados, rodar processos
-lib/core/compress.dart   opções e comando de compressão
-lib/core/split.dart      opções e planejamento dos cortes
-lib/core/convert.dart    conversor · trim.dart cortador · merge.dart merger
-lib/core/crop.dart       cropper · mux.dart mux
-lib/core/streams.dart    compatibilidade de codecs/contêineres e recodificação
-lib/core/audio.dart      ferramentas de áudio
-lib/core/pdf.dart        ferramentas de PDF · pdf_workspace.dart organizador e miniaturas
-lib/ui/modules.dart      lista de ferramentas de cada módulo
-lib/ui/expressive.dart   componentes no estilo Material 3 Expressive
-lib/core/state.dart      estado do app e fila de tarefas
-lib/ui/                  telas (Material 3)
-tool/patch_windows.dart  título, ícone e tamanho mínimo da janela
-tool/core_test.dart      teste do núcleo sem interface
+lib/core/      lógica (sem interface): uma ferramenta por arquivo
+  ffmpeg.dart      localizar FFmpeg, ler metadados, rodar processos
+  compress.dart    split.dart  convert.dart  trim.dart  merge.dart  crop.dart  mux.dart
+  audio.dart       ferramentas de áudio
+  pdf.dart         ferramentas de PDF · pdf_workspace.dart organizador e miniaturas
+  streams.dart     compatibilidade de codecs/contêineres
+  state.dart       estado do app e fila de tarefas
+lib/ui/        telas
+  modules.dart     lista de ferramentas de cada módulo
+  expressive.dart  componentes no estilo Material 3 Expressive
+tool/
+  patch_windows.dart  personaliza o runner do Windows e baixa os motores de PDF
+  core_test.dart      teste do núcleo sem interface (roda no CI)
 ```
 
-Para usar outro FFmpeg, defina a variável de ambiente `FILUME_FFMPEG_DIR` com a pasta que contém `ffmpeg.exe` e `ffprobe.exe`.
+**Compilar:** cada push na `main` roda o [GitHub Actions](.github/workflows/build.yml), que gera o runner do Windows, compila, embute FFmpeg/qpdf/Ghostscript e publica uma release quando a versão do `pubspec.yaml` é nova.
 
-## Licenças
+**Localmente** (Windows, com Flutter estável instalado):
 
-O FFmpeg embutido é o build GPL de <https://github.com/BtbN/FFmpeg-Builds>, distribuído como executável separado.
+```
+flutter create --platforms=windows --project-name filume --org com.filume .
+dart run tool/patch_windows.dart
+flutter build windows --release
+```
 
-O módulo Documentos usa o qpdf (Apache 2.0) e o Ghostscript (AGPL v3), também como executáveis separados, baixados no build por `tool/patch_windows.dart` para a pasta `pdftools`.
+Para apontar para outros binários, use as variáveis `FILUME_FFMPEG_DIR` (pasta com `ffmpeg.exe` e `ffprobe.exe`) e `FILUME_PDF_DIR` (pasta com `qpdf/bin` e `gs/bin`).
+
+## Contribuindo
+
+Achou um bug ou tem uma ideia? Abra uma [issue](https://github.com/caua-f-o/FiLume/issues/new/choose). O histórico de mudanças está no [CHANGELOG](CHANGELOG.md).
+
+## Créditos
+
+Criado por **Cauã F. O.**
+
+O FiLume distribui, como programas separados e sem modificação:
+
+- [FFmpeg](https://ffmpeg.org) — build GPL de [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) (GPL v3)
+- [qpdf](https://qpdf.sourceforge.io) (Apache 2.0)
+- [Ghostscript](https://www.ghostscript.com) (AGPL v3)
+
+E usa os pacotes Flutter [media_kit](https://github.com/media-kit/media-kit), [window_manager](https://github.com/leanflutter/window_manager), [desktop_drop](https://github.com/MixinNetwork/flutter-plugins) e [file_selector](https://pub.dev/packages/file_selector).

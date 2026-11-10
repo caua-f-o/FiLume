@@ -1,0 +1,11 @@
+name: Sugerir uma ideia
+description: Uma ferramenta nova ou uma melhoria
+labels: [ideia]
+body:
+  - type: textarea
+    id: ideia
+    attributes:
+      label: Ideia
+      description: O que você gostaria que o FiLume fizesse, e para quê.
+    validations:
+      required: true

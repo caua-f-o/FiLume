@@ -9,7 +9,19 @@ permissions:
   contents: write
 
 jobs:
+  # Renomeia tags antigas e mantém títulos/notas das releases iguais ao CHANGELOG.md.
+  releases:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sincronizar releases com o CHANGELOG
+        run: python3 tool/sync_releases.py sync
+
   windows:
+    needs: releases
     runs-on: windows-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -75,8 +87,15 @@ jobs:
           name: FiLume-windows-x64
           path: FiLume-windows-x64.zip
 
-      - name: Publicar em Releases
+      - name: Publicar em Releases (só quando a versão é nova)
         shell: pwsh
         run: |
-          $tag = "v1.0.${{ github.run_number }}"
-          gh release create $tag FiLume-windows-x64.zip --title "FiLume $tag" --notes "Baixe o FiLume-windows-x64.zip, extraia e abra o FiLume.exe. O FFmpeg já vai junto."
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+          $tag = "v$version"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "A release $tag já existe; nada a publicar."
+            exit 0
+          }
+          python tool/sync_releases.py notes $version notes.md
+          gh release create $tag FiLume-windows-x64.zip --title "FiLume $version" --notes-file notes.md --latest

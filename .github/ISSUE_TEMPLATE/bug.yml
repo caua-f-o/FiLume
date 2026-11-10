@@ -1,0 +1,36 @@
+name: Relatar um problema
+description: Algo não funcionou como deveria
+labels: [bug]
+body:
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do FiLume
+      placeholder: ex.: 1.3.1
+    validations:
+      required: true
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo
+      options: [Vídeo, Áudio, Documentos, Interface / janela, Outro]
+    validations:
+      required: true
+  - type: textarea
+    id: oque
+    attributes:
+      label: O que aconteceu
+      description: O que você fez, o que esperava e o que aconteceu. Prints ajudam.
+    validations:
+      required: true
+  - type: textarea
+    id: detalhes
+    attributes:
+      label: Mensagem de erro
+      description: Se a tarefa falhou, clique em "Detalhes" na fila e cole o texto aqui.
+      render: text
+  - type: input
+    id: arquivo
+    attributes:
+      label: Tipo de arquivo
+      placeholder: ex.: MP4 de celular, 4K, 2 GB
