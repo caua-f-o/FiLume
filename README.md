@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/caua-f-o/FiLume/releases/latest"><img alt="Última versão" src="https://img.shields.io/github/v/release/caua-f-o/FiLume?label=vers%C3%A3o&color=b4d43c"></a>
   <a href="https://github.com/caua-f-o/FiLume/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/caua-f-o/FiLume/build.yml?branch=main&label=build"></a>
+  <a href="LICENSE"><img alt="Licença GPL v3" src="https://img.shields.io/badge/licen%C3%A7a-GPL%20v3-blue"></a>
   <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4">
   <img alt="Flutter" src="https://img.shields.io/badge/Flutter-Material%203-02569B?logo=flutter">
   <a href="https://github.com/caua-f-o/FiLume/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/caua-f-o/FiLume/total?label=downloads"></a>
@@ -123,3 +124,7 @@ O FiLume distribui, como programas separados e sem modificação:
 - [Ghostscript](https://www.ghostscript.com) (AGPL v3)
 
 E usa os pacotes Flutter [media_kit](https://github.com/media-kit/media-kit), [window_manager](https://github.com/leanflutter/window_manager), [desktop_drop](https://github.com/MixinNetwork/flutter-plugins) e [file_selector](https://pub.dev/packages/file_selector).
+
+## Licença
+
+O FiLume é software livre sob a [GNU GPL v3](LICENSE). Os programas embutidos mantêm as próprias licenças; veja [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
