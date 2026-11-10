@@ -1,0 +1,82 @@
+name: Build FiLume (Windows)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+
+      - name: Gerar e personalizar o runner do Windows
+        shell: pwsh
+        run: |
+          flutter create --platforms=windows --project-name filume --org com.filume .
+          if (Test-Path test/widget_test.dart) { Remove-Item test/widget_test.dart }
+          dart run tool/patch_windows.dart
+
+      - name: Compilar (release)
+        run: flutter build windows --release
+
+      - name: Embutir FFmpeg e runtime do Visual C++
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = 'build/windows/x64/runner/Release'
+          $assets = gh release view latest -R BtbN/FFmpeg-Builds --json assets -q '.assets[].name'
+          $pick = $assets |
+            Where-Object { $_ -match '^ffmpeg-n\d+\.\d+-latest-win64-gpl-shared-\d+\.\d+\.zip$' } |
+            Sort-Object { [version]($_ -replace '^ffmpeg-n(\d+\.\d+)-.*$', '$1') } |
+            Select-Object -Last 1
+          if (-not $pick) { $pick = 'ffmpeg-master-latest-win64-gpl-shared.zip' }
+          Write-Host "FFmpeg: $pick"
+          gh release download latest -R BtbN/FFmpeg-Builds -p $pick -O ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_dl
+          $bin = Get-ChildItem ffmpeg_dl -Recurse -Directory -Filter bin | Select-Object -First 1
+          New-Item -ItemType Directory -Force "$release/ffmpeg" | Out-Null
+          Copy-Item "$($bin.FullName)/*" "$release/ffmpeg" -Exclude ffplay.exe
+          & "$release/ffmpeg/ffmpeg.exe" -hide_banner -version
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            Copy-Item "C:/Windows/System32/$dll" $release
+          }
+
+      - name: Teste do núcleo com o FFmpeg embutido (não bloqueia o build)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:FILUME_FFMPEG_DIR = (Resolve-Path 'build/windows/x64/runner/Release/ffmpeg').Path
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          & "$env:FILUME_FFMPEG_DIR/ffmpeg.exe" -v error -y -f lavfi -i testsrc2=s=640x360:r=30:d=40 -f lavfi -i sine=d=40 -c:v libx264 -g 60 -b:v 800k -c:a aac "smoke/teste 100%.mp4"
+          dart run tool/core_test.dart "smoke/teste 100%.mp4" smoke/out
+
+      - name: Empacotar
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/FiLume | Out-Null
+          Copy-Item build/windows/x64/runner/Release/* dist/FiLume -Recurse
+          Compress-Archive -Path dist/FiLume -DestinationPath FiLume-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FiLume-windows-x64
+          path: FiLume-windows-x64.zip
+
+      - name: Publicar em Releases
+        shell: pwsh
+        run: |
+          $tag = "v1.0.${{ github.run_number }}"
+          gh release create $tag FiLume-windows-x64.zip --title "FiLume $tag" --notes "Baixe o FiLume-windows-x64.zip, extraia e abra o FiLume.exe. O FFmpeg já vai junto."
