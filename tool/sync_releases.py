@@ -52,15 +52,20 @@ def sync():
         if old in tags and new not in tags:
             rel = tags[old]
             sha = gh("api", f"repos/{{owner}}/{{repo}}/git/ref/tags/{old}", "--jq", ".object.sha").stdout.strip()
-            gh("api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/releases/{rel['id']}",
-               "-f", f"tag_name={new}", "-f", f"target_commitish={sha}")
+            r = gh("api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/releases/{rel['id']}",
+                   "-f", f"tag_name={new}", "-f", f"target_commitish={sha}", check=False)
+            if r.returncode != 0:
+                # O token do Actions não cria tags em commits que alteram workflows;
+                # a release fica com a tag antiga, mas com título e notas da versão certa.
+                print(f"aviso: {old} mantida ({r.stderr.strip()})")
+                continue
             gh("api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/tags/{old}", check=False)
             print(f"tag {old} -> {new} ({sha[:7]})")
 
     rels = releases()
     versions = []
     for rel in rels:
-        v = rel["tag_name"].lstrip("v")
+        v = LEGACY.get(rel["tag_name"], rel["tag_name"]).lstrip("v")
         if v not in sections:
             continue
         versions.append((tuple(int(x) for x in v.split(".")), rel))
