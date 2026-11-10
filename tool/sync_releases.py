@@ -1,7 +1,7 @@
 """Mantém as releases do GitHub em dia com o CHANGELOG.md.
 
 Uso (no GitHub Actions, com GH_TOKEN):
-  python tool/sync_releases.py sync          # renomeia tags antigas e atualiza notas/títulos
+  python tool/sync_releases.py sync          # atualiza títulos e notas
   python tool/sync_releases.py notes 1.3.1 notes.md   # grava as notas de uma versão
 """
 import json
@@ -14,7 +14,9 @@ REPO_FOOTER = (
     "FFmpeg, qpdf e Ghostscript já vão juntos."
 )
 
-# Releases publicadas antes de as tags seguirem a versão do app.
+# Releases publicadas antes de as tags seguirem a versão do app. O GitHub não
+# deixa o token do Actions renomear essas tags, então elas ficam como estão e
+# só recebem o título e as notas da versão certa.
 LEGACY = {"v1.0.1": "v1.0.0", "v1.0.2": "v1.3.0", "v1.0.3": "v1.3.1"}
 
 
@@ -46,29 +48,13 @@ def releases():
 def sync():
     sections = changelog()
     rels = releases()
-    tags = {r["tag_name"]: r for r in rels}
-
-    for old, new in LEGACY.items():
-        if old in tags and new not in tags:
-            rel = tags[old]
-            sha = gh("api", f"repos/{{owner}}/{{repo}}/git/ref/tags/{old}", "--jq", ".object.sha").stdout.strip()
-            r = gh("api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/releases/{rel['id']}",
-                   "-f", f"tag_name={new}", "-f", f"target_commitish={sha}", check=False)
-            if r.returncode != 0:
-                # O token do Actions não cria tags em commits que alteram workflows;
-                # a release fica com a tag antiga, mas com título e notas da versão certa.
-                print(f"aviso: {old} mantida ({r.stderr.strip()})")
-                continue
-            gh("api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/tags/{old}", check=False)
-            print(f"tag {old} -> {new} ({sha[:7]})")
-
-    rels = releases()
     versions = []
     for rel in rels:
         v = LEGACY.get(rel["tag_name"], rel["tag_name"]).lstrip("v")
         if v not in sections:
             continue
-        versions.append((tuple(int(x) for x in v.split(".")), rel))
+        # Em caso de empate, a tag nova (vX.Y.Z) ganha da antiga.
+        versions.append((tuple(int(x) for x in v.split(".")), rel["tag_name"] not in LEGACY, rel))
         title = f"FiLume {v}"
         body = notes(v, sections)
         if rel["name"] != title or (rel["body"] or "").strip() != body.strip():
@@ -76,7 +62,7 @@ def sync():
                "-f", f"name={title}", "-f", f"body={body}")
             print(f"notas atualizadas: {v}")
     if versions:
-        newest = max(versions, key=lambda x: x[0])[1]
+        newest = max(versions, key=lambda x: (x[0], x[1]))[2]
         gh("api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/releases/{newest['id']}", "-f", "make_latest=true")
 
 
