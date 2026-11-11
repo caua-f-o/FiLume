@@ -15,6 +15,7 @@ import 'merge.dart';
 import 'mux.dart';
 import 'pdf.dart';
 import 'pdf_workspace.dart';
+import 'prefs.dart';
 import 'split.dart';
 import 'streams.dart';
 import 'trim.dart';
@@ -151,6 +152,18 @@ class JobQueue extends ChangeNotifier {
 
   bool get busy => jobs.any((j) => !j.finished);
 
+  /// Chamado quando uma tarefa termina com sucesso.
+  void Function(Job job)? onDone;
+
+  Job? get running {
+    for (final j in jobs) {
+      if (j.status == JobStatus.running) return j;
+    }
+    return null;
+  }
+
+  int get waiting => jobs.where((j) => j.status == JobStatus.queued).length;
+
   void addAll(Iterable<Job> items) {
     jobs.addAll(items);
     notifyListeners();
@@ -226,6 +239,7 @@ class JobQueue extends ChangeNotifier {
         ..status = JobStatus.done
         ..progress = 1
         ..stage = 'Concluído';
+      onDone?.call(job);
     } on JobCanceled {
       job
         ..status = JobStatus.canceled
@@ -288,6 +302,9 @@ class AppState extends ChangeNotifier {
   final AudioMergeSettings audioMerge = AudioMergeSettings();
   final MixSettings mix = MixSettings();
 
+  /// No PDF Estúdio: true = ferramenta aberta; false = tela de entrada.
+  bool pdfOpen = false;
+
   /// Ferramenta aberta em cada módulo (lembrada ao trocar de módulo).
   final Map<String, int> toolIndex = {};
 
@@ -301,8 +318,14 @@ class AppState extends ChangeNotifier {
   Directory? _thumbDir;
   final Map<String, Future<String?>> _thumbs = {};
   final JobQueue queue = JobQueue();
+  final Prefs prefs = Prefs();
 
   Future<void> init() async {
+    queue.onDone = (job) {
+      final r = job.result;
+      if (r == null) return;
+      prefs.addRecent(Recent(title: job.title, detail: r.summary, path: r.revealPath, module: job.module));
+    };
     toolsLoading = true;
     notifyListeners();
     tools = await FfTools.locate();

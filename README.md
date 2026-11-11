@@ -53,7 +53,7 @@ Não precisa instalar nada além do próprio FiLume: o FFmpeg, o qpdf e o Ghosts
 | **Dividir** | Por tamanho, duração ou número de partes, sem recodificar. |
 | **Unir** | Junta na ordem da lista. |
 
-### 📄 Documentos (PDF)
+### 📄 PDF Estúdio
 
 | Ferramenta | O que faz |
 | --- | --- |

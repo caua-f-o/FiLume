@@ -24,6 +24,7 @@ String? _splitHint(SplitSettings s, int n) {
 }
 
 final videoModule = ModuleDef(
+  id: 'video',
   title: 'Vídeo',
   one: 'vídeo',
   many: 'vídeos',
@@ -112,6 +113,7 @@ final videoModule = ModuleDef(
 );
 
 final audioModule = ModuleDef(
+  id: 'audio',
   title: 'Áudio',
   one: 'áudio',
   many: 'áudios',
@@ -175,7 +177,8 @@ final audioModule = ModuleDef(
 bool _pdf(MediaInfo i) => i.isPdf && !i.encrypted;
 
 final docsModule = ModuleDef(
-  title: 'Documentos',
+  id: 'pdf',
+  title: 'PDF',
   one: 'arquivo',
   many: 'arquivos',
   typeLabel: 'PDFs e imagens',

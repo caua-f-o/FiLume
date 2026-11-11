@@ -253,10 +253,12 @@ class _PresetFieldState extends State<PresetField> {
           runSpacing: 6,
           children: [
             for (final preset in widget.presets)
-              ActionChip(
+              ChoiceChip(
                 label: Text(widget.presetLabel(preset)),
+                selected: (widget.value - preset).abs() < 1e-9,
+                showCheckmark: false,
                 visualDensity: VisualDensity.compact,
-                onPressed: () {
+                onSelected: (_) {
                   _ctrl.text = widget.format(preset);
                   setState(() => _invalid = false);
                   widget.onChanged(preset);

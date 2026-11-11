@@ -3,10 +3,15 @@ import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'core/prefs.dart';
 import 'core/state.dart';
 import 'ui/common.dart';
 import 'ui/expressive.dart';
+import 'ui/home_page.dart';
 import 'ui/modules.dart';
+import 'ui/pdf_studio.dart';
+import 'ui/settings_page.dart';
+import 'ui/theme.dart';
 import 'ui/preview_player.dart';
 import 'ui/title_bar.dart';
 import 'ui/tool_page.dart';
@@ -21,45 +26,21 @@ Future<void> main() async {
     // Sem a biblioteca de reprodução o app funciona; só as prévias mudam.
     playerAvailable = false;
   }
-  runApp(const FiLumeApp());
-}
-
-/// Verde-amarelado de vagalume.
-const _seed = Color(0xFFB4D43C);
-
-ThemeData _theme(Brightness brightness) {
-  final cs = ColorScheme.fromSeed(seedColor: _seed, brightness: brightness);
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: cs,
-    scaffoldBackgroundColor: cs.surface,
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      isDense: true,
-    ),
-    segmentedButtonTheme: SegmentedButtonThemeData(
-      style: ButtonStyle(
-        visualDensity: VisualDensity.compact,
-        textStyle: WidgetStatePropertyAll(
-          const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-        ),
-      ),
-    ),
-    tooltipTheme: const TooltipThemeData(
-      waitDuration: Duration(milliseconds: 400),
-    ),
-  );
+  final state = AppState();
+  await state.prefs.load();
+  runApp(FiLumeApp(state: state));
 }
 
 class FiLumeApp extends StatefulWidget {
-  const FiLumeApp({super.key});
+  const FiLumeApp({super.key, required this.state});
+  final AppState state;
 
   @override
   State<FiLumeApp> createState() => _FiLumeAppState();
 }
 
 class _FiLumeAppState extends State<FiLumeApp> {
-  final AppState state = AppState();
+  AppState get state => widget.state;
   late final AppLifecycleListener _lifecycle;
 
   @override
@@ -89,36 +70,49 @@ class _FiLumeAppState extends State<FiLumeApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FiLume',
-      debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
-      themeMode: ThemeMode.system,
-      home: Shell(state: state),
+    return ListenableBuilder(
+      listenable: state.prefs,
+      builder: (context, _) {
+        final seed = appSeed(state.prefs);
+        return MaterialApp(
+          title: 'FiLume',
+          debugShowCheckedModeBanner: false,
+          theme: buildTheme(seed, Brightness.light),
+          darkTheme: buildTheme(seed, Brightness.dark),
+          themeMode: themeModeOf(state.prefs),
+          home: Shell(state: state),
+        );
+      },
     );
   }
 }
 
-class _Module {
-  const _Module(this.name, this.icon, this.selectedIcon, this.tools);
-  final String name;
-  final IconData icon;
-  final IconData selectedIcon;
-  final List<String> tools;
+class _Page {
+  const _Page(this.id, this.name, this.icon, this.selectedIcon, [this.soon = const []]);
+  final String id, name;
+  final IconData icon, selectedIcon;
+
+  /// Ferramentas planejadas (módulo ainda não pronto).
+  final List<String> soon;
 }
 
-const _modules = [
-  _Module('Vídeo', Icons.movie_outlined, Icons.movie, []),
-  _Module('Áudio', Icons.graphic_eq, Icons.graphic_eq, []),
-  _Module('Imagem', Icons.image_outlined, Icons.image, [
+const _pages = [
+  _Page('home', 'Início', Icons.home_outlined, Icons.home),
+  _Page('pdf', 'PDF', Icons.picture_as_pdf_outlined, Icons.picture_as_pdf),
+  _Page('video', 'Vídeo', Icons.videocam_outlined, Icons.videocam),
+  _Page('audio', 'Áudio', Icons.music_note_outlined, Icons.music_note),
+  _Page('image', 'Imagem', Icons.image_outlined, Icons.image, [
     'Conversor',
     'Compressor',
     'Redimensionador',
     'Rotacionador',
   ]),
-  _Module('Documentos', Icons.description_outlined, Icons.description, []),
+  _Page('files', 'Arquivos', Icons.swap_horiz, Icons.swap_horiz, [
+    'Word, Excel e PowerPoint para PDF',
+    'PDF para texto',
+  ]),
 ];
+const _settings = _Page('settings', 'Ajustes', Icons.tune, Icons.tune);
 
 class Shell extends StatefulWidget {
   const Shell({super.key, required this.state});
@@ -129,11 +123,33 @@ class Shell extends StatefulWidget {
 }
 
 class _ShellState extends State<Shell> {
-  int _index = 0;
+  late String _page = _initialPage();
+
+  String _initialPage() {
+    final prefs = widget.state.prefs;
+    final wanted = switch (prefs.startPage) {
+      'pdf' => 'pdf',
+      'last' => prefs.lastPage,
+      _ => 'home',
+    };
+    return _pages.any((p) => p.id == wanted) ? wanted : 'home';
+  }
+
+  void _go(String page) {
+    if (page == _page) return;
+    setState(() => _page = page);
+    final prefs = widget.state.prefs;
+    if (page != 'settings' && prefs.lastPage != page) {
+      prefs.lastPage = page;
+      prefs.save();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final state = widget.state;
+    final page = _page == 'settings' ? _settings : _pages.firstWhere((p) => p.id == _page);
     return Scaffold(
       body: Stack(
         children: [
@@ -141,59 +157,23 @@ class _ShellState extends State<Shell> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
                   colors: [
-                    Color.alphaBlend(
-                      cs.primary.withValues(alpha: 0.07),
-                      cs.surface,
-                    ),
+                    Color.alphaBlend(cs.primary.withValues(alpha: 0.09), cs.surface),
                     cs.surface,
-                    Color.alphaBlend(
-                      cs.tertiary.withValues(alpha: 0.08),
-                      cs.surface,
-                    ),
+                    Color.alphaBlend(cs.tertiary.withValues(alpha: 0.07), cs.surface),
                   ],
                 ),
               ),
-              child: Row(
-                children: [
-                  NavigationRail(
-                    backgroundColor: Colors.transparent,
-                    minWidth: 92,
-                    labelType: NavigationRailLabelType.all,
-                    selectedIndex: _index,
-                    onDestinationSelected: (i) => setState(() => _index = i),
-                    leading: Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const FireflyLogo(size: 48),
-                          Text(
-                            'FiLume',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.3,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    destinations: [
-                      for (final m in _modules)
-                        NavigationRailDestination(
-                          icon: Icon(m.icon),
-                          selectedIcon: Icon(m.selectedIcon),
-                          label: Text(m.name),
-                        ),
-                    ],
-                  ),
-                  Expanded(
-                    child: Padding(
-                      // Espaço para a faixa da barra de título desenhada pelo app.
-                      padding: EdgeInsets.only(top: customTitleBar ? 30 : 12),
+              child: Padding(
+                // Espaço para a faixa da barra de título desenhada pelo app.
+                padding: EdgeInsets.only(top: customTitleBar ? titleBarHeight + 4 : 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Rail(prefs: state.prefs, current: _page, onGo: _go),
+                    Expanded(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 220),
                         switchInCurve: Curves.easeOutCubic,
@@ -202,27 +182,24 @@ class _ShellState extends State<Shell> {
                           children: [...previous, if (current != null) current],
                         ),
                         child: KeyedSubtree(
-                          key: ValueKey(_index),
-                          child: switch (_index) {
-                            0 => ToolPage(
-                              state: widget.state,
-                              module: videoModule,
-                            ),
-                            1 => ToolPage(
-                              state: widget.state,
-                              module: audioModule,
-                            ),
-                            3 => ToolPage(
-                              state: widget.state,
-                              module: docsModule,
-                            ),
-                            _ => _SoonPage(module: _modules[_index]),
-                          },
+                          key: ValueKey(_page),
+                          child: ModuleTheme(
+                            prefs: state.prefs,
+                            module: _page,
+                            child: switch (_page) {
+                              'home' => HomePage(state: state, onNavigate: _go),
+                              'pdf' => PdfStudio(state: state, onNavigate: _go),
+                              'video' => ToolPage(state: state, module: videoModule),
+                              'audio' => ToolPage(state: state, module: audioModule),
+                              'settings' => SettingsPage(prefs: state.prefs),
+                              _ => _SoonPage(page: page),
+                            },
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -239,9 +216,97 @@ class _ShellState extends State<Shell> {
   }
 }
 
+/// Barra lateral. Na tela inicial ficam só os Ajustes (as categorias já estão
+/// no cartão grande); nas outras telas aparecem todos os módulos.
+class _Rail extends StatelessWidget {
+  const _Rail({required this.prefs, required this.current, required this.onGo});
+  final Prefs prefs;
+  final String current;
+  final void Function(String page) onGo;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    Widget item(_Page p) => _RailItem(
+          page: p,
+          selected: current == p.id,
+          scheme: buildTheme(seedFor(prefs, p.id), brightness).colorScheme,
+          onTap: () => onGo(p.id),
+        );
+    return SizedBox(
+      width: 88,
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          if (current != 'home')
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(children: [for (final p in _pages) item(p)]),
+              ),
+            )
+          else
+            const Spacer(),
+          item(_settings),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _RailItem extends StatelessWidget {
+  const _RailItem({required this.page, required this.selected, required this.scheme, required this.onTap});
+  final _Page page;
+  final bool selected;
+  final ColorScheme scheme;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final fg = selected ? cs.onSurface : cs.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                width: 56,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: selected ? scheme.primaryContainer : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  selected ? page.selectedIcon : page.icon,
+                  size: 22,
+                  color: selected ? scheme.onPrimaryContainer : fg,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                page.name,
+                style: TextStyle(fontSize: 12, fontWeight: selected ? FontWeight.w700 : FontWeight.w500, color: fg),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SoonPage extends StatelessWidget {
-  const _SoonPage({required this.module});
-  final _Module module;
+  const _SoonPage({required this.page});
+  final _Page page;
 
   @override
   Widget build(BuildContext context) {
@@ -252,7 +317,7 @@ class _SoonPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          PageTitle(module.name),
+          PageTitle(page.name),
           const SizedBox(height: 4),
           Text(
             'Este módulo ainda não está pronto. Ferramentas planejadas:',
@@ -263,13 +328,13 @@ class _SoonPage extends StatelessWidget {
             spacing: 12,
             runSpacing: 12,
             children: [
-              for (final tool in module.tools)
+              for (final tool in page.soon)
                 SizedBox(
-                  width: 220,
+                  width: 300,
                   child: Panel(
                     child: Row(
                       children: [
-                        Icon(module.icon, color: cs.onSurfaceVariant),
+                        Icon(page.icon, color: cs.onSurfaceVariant),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(tool, style: t.textTheme.titleSmall),

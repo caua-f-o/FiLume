@@ -9,6 +9,7 @@ import '../core/job.dart';
 import '../core/state.dart';
 import 'common.dart';
 import 'expressive.dart';
+import 'process_button.dart';
 
 /// Uma ferramenta de um módulo: rótulo, painel de opções e como virar tarefas.
 class ToolDef {
@@ -58,6 +59,7 @@ class ToolDef {
 
 class ModuleDef {
   const ModuleDef({
+    required this.id,
     required this.title,
     required this.one,
     required this.many,
@@ -69,6 +71,8 @@ class ModuleDef {
     this.docs = false,
     this.missing,
   });
+  /// "video", "audio", "pdf": identifica o módulo nas cores e nos recentes.
+  final String id;
   final String title;
 
   /// "vídeo" / "vídeos", "áudio" / "áudios".
@@ -86,9 +90,12 @@ class ModuleDef {
 }
 
 class ToolPage extends StatefulWidget {
-  const ToolPage({super.key, required this.state, required this.module});
+  const ToolPage({super.key, required this.state, required this.module, this.onBack});
   final AppState state;
   final ModuleDef module;
+
+  /// Mostra uma seta de voltar antes do título (ex.: voltar ao PDF Estúdio).
+  final VoidCallback? onBack;
 
   @override
   State<ToolPage> createState() => _ToolPageState();
@@ -128,7 +135,9 @@ class _ToolPageState extends State<ToolPage> {
   void _start() {
     final ready = _accepted();
     if (ready.isEmpty) return;
-    state.queue.addAll(_tool.jobs(state, ready));
+    state.queue.addAll([
+      for (final job in _tool.jobs(state, ready)) job..module = module.id,
+    ]);
   }
 
   @override
@@ -151,6 +160,14 @@ class _ToolPageState extends State<ToolPage> {
             children: [
               Row(
                 children: [
+                  if (widget.onBack != null) ...[
+                    IconButton(
+                      tooltip: 'Voltar',
+                      onPressed: widget.onBack,
+                      icon: const Icon(Icons.arrow_back),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   PageTitle(module.title),
                   const SizedBox(width: 20),
                   Expanded(
@@ -232,8 +249,8 @@ class _ToolPageState extends State<ToolPage> {
                                     },
                                   ),
                                   const SizedBox(height: 10),
-                                  GlowButton(
-                                    icon: tool.icon,
+                                  ProcessButton(
+                                    queue: state.queue,
                                     label: blocked ??
                                         tool.actionLabel?.call(state, readyList) ??
                                         '${tool.label} $ready ${ready == 1 ? module.one : module.many}',
