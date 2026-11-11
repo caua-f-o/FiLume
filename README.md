@@ -29,6 +29,8 @@ Não precisa instalar nada além do próprio FiLume: o FFmpeg, o qpdf e o Ghosts
 
 É portátil: não mexe no registro e pode ficar num pendrive. Para remover, apague a pasta.
 
+Quer testar novidades antes? As **betas** ficam nas [releases](https://github.com/caua-f-o/FiLume/releases) marcadas como *Pre-release*. Podem ter falhas; para o dia a dia, use a versão estável.
+
 ## Ferramentas
 
 ### 🎬 Vídeo
@@ -53,21 +55,27 @@ Não precisa instalar nada além do próprio FiLume: o FFmpeg, o qpdf e o Ghosts
 | **Dividir** | Por tamanho, duração ou número de partes, sem recodificar. |
 | **Unir** | Junta na ordem da lista. |
 
-### 📄 Documentos (PDF)
+### 📄 PDF Estúdio
 
 | Ferramenta | O que faz |
 | --- | --- |
 | **Comprimir** | Quatro níveis, com opção de tons de cinza. PDFs escaneados chegam a encolher mais de 90%. |
 | **Dividir** | A cada N páginas, por tamanho máximo (anexos de e-mail), por intervalos ou página a página. |
 | **Unir** | Vários PDFs em um só. |
-| **Organizar** | Mesa com miniaturas: arraste, gire, exclua e misture páginas de vários PDFs. |
+| **Organizar** | Bandeja de páginas no estilo do NAPS2: mistura PDFs, imagens e digitalizações (scanner TWAIN/WIA); miniaturas com zoom ou lista simples; girar, inverter, endireitar e ver de perto. |
 | **PDF → Imagens** | JPG ou PNG em 72, 150 ou 300 dpi. |
 | **Imagens → PDF** | Cada imagem vira uma página, em A4 ou no tamanho original. |
 | **Senha** | Protege com AES-256 ou remove a senha (sabendo a atual). |
 
 ### 🖼️ Imagem
 
-Em desenvolvimento: conversor, compressor, redimensionador e rotacionador.
+| Ferramenta | O que faz |
+| --- | --- |
+| **Ampliar** | Hiperescalador 2×, 3× ou 4×. Por IA (Real-ESRGAN, na placa de vídeo) com modelos para foto e para anime/ilustração; modo clássico para qualquer computador; modo pixel art. |
+| **Converter** | JPG, PNG, WebP, AVIF, BMP e TIFF, com controle de qualidade. |
+| **Comprimir** | Por qualidade, por tamanho máximo em KB/MB ou por porcentagem. Nunca entrega um arquivo maior que o original. |
+| **Redimensionar** | Por lado maior, largura, altura ou porcentagem, sempre mantendo a proporção. |
+| **Girar** | 90°, 180° e espelhamento. |
 
 ## Feito para arquivos grandes
 
@@ -112,6 +120,8 @@ Para apontar para outros binários, use as variáveis `FILUME_FFMPEG_DIR` (pasta
 ## Contribuindo
 
 Achou um bug ou tem uma ideia? Abra uma [issue](https://github.com/caua-f-o/FiLume/issues/new/choose). O histórico de mudanças está no [CHANGELOG](CHANGELOG.md).
+
+O branch `main` só recebe versões estáveis; o desenvolvimento acontece no `dev`, de onde saem as betas. Pull requests vão para o `dev`.
 
 ## Créditos
 

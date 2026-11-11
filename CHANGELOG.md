@@ -1,6 +1,24 @@
 # Changelog
 
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
+Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
+
+## [1.4.0-beta.1] — 2026-11-11
+
+### Adicionado
+- **Módulo Imagem:** ampliar (hiperescalador por IA com Real-ESRGAN, modo clássico e modo pixel art), converter (JPG, PNG, WebP, AVIF, BMP, TIFF), comprimir (por qualidade, tamanho ou porcentagem), redimensionar e girar.
+- **Tela inicial:** área para soltar qualquer arquivo (o FiLume abre a ferramenta certa), categorias, arquivos recentes e a fila em andamento.
+- **PDF Estúdio:** o PDF ganhou área própria, com entrada dedicada e as ferramentas em cartões.
+- **Bandeja de páginas** (em "Organizar"), no estilo do NAPS2: mistura PDFs, imagens e digitalizações; visão em miniaturas com controle de zoom ou lista simples; visualizador com zoom; menu de contexto com girar, inverter e endireitar; digitalização por scanner (TWAIN ou WIA).
+- **Ajustes:** tema (sistema, claro, escuro), cores (uma por ferramenta, padrão FiLume, cor de destaque do Windows ou paleta Material), tela ao abrir e histórico de recentes.
+- **Botão de processo animado:** a seta vira uma barrinha, o enchimento acompanha o progresso real e termina em "Concluído".
+- Detalhes geométricos em todas as telas (cartões, painéis de Vídeo, Áudio, PDF e Imagem), cada um ligado ao que o lugar faz.
+
+### Alterado
+- O módulo "Documentos" passou a se chamar PDF Estúdio; a licença do projeto agora é GPL-3.0.
+
+### Corrigido
+- Atalhos de valores (10 MB, 25 MB…) apareciam com fundo preto; agora têm contraste correto e o escolhido fica marcado.
 
 ## [1.3.1] — 2026-11-10
 
@@ -36,6 +54,7 @@ Primeira versão.
 - Arrastar e soltar arquivos, escolha da pasta de saída, tema claro/escuro automático.
 - FFmpeg embutido.
 
+[1.4.0]: https://github.com/caua-f-o/FiLume/releases/tag/v1.4.0
 [1.3.1]: https://github.com/caua-f-o/FiLume/releases/tag/v1.3.1
 [1.3.0]: https://github.com/caua-f-o/FiLume/releases/tag/v1.3.0
 [1.0.0]: https://github.com/caua-f-o/FiLume/releases/tag/v1.0.1

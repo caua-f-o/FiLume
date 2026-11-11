@@ -31,6 +31,9 @@ class Job {
   final String detail;
   final JobBody body;
 
+  /// Módulo que criou a tarefa ("video", "audio", "pdf"); usado nos recentes.
+  String module = '';
+
   JobStatus status = JobStatus.queued;
   double progress = 0;
   String stage = 'Na fila';

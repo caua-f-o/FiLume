@@ -3,6 +3,9 @@
 Uso (no GitHub Actions, com GH_TOKEN):
   python tool/sync_releases.py sync          # atualiza títulos e notas
   python tool/sync_releases.py notes 1.3.1 notes.md   # grava as notas de uma versão
+
+Versões beta (1.4.0-beta.1) saem do branch dev como pre-release e nunca
+viram a "Latest"; se o CHANGELOG não tiver a seção da beta, usa a da 1.4.0.
 """
 import json
 import re
@@ -12,6 +15,11 @@ import sys
 REPO_FOOTER = (
     "\n\n---\n**Instalação:** baixe o `FiLume-windows-x64.zip`, extraia e abra o `FiLume.exe`. "
     "FFmpeg, qpdf e Ghostscript já vão juntos."
+)
+BETA_NOTE = (
+    "> **Versão beta.** Traz novidades ainda em teste e pode ter falhas. "
+    "Para uso no dia a dia, prefira a [última versão estável]"
+    "(https://github.com/caua-f-o/FiLume/releases/latest).\n\n"
 )
 
 # Releases publicadas antes de as tags seguirem a versão do app. O GitHub não
@@ -23,14 +31,29 @@ LEGACY = {"v1.0.1": "v1.0.0", "v1.0.2": "v1.3.0", "v1.0.3": "v1.3.1"}
 def changelog():
     text = open("CHANGELOG.md", encoding="utf-8").read()
     out = {}
-    for m in re.finditer(r"^## \[([0-9.]+)\][^\n]*\n(.*?)(?=^## \[|^\[[0-9.]+\]:|\Z)", text, re.S | re.M):
+    for m in re.finditer(r"^## \[([0-9A-Za-z.\-]+)\][^\n]*\n(.*?)(?=^## \[|^\[[0-9A-Za-z.\-]+\]:|\Z)", text, re.S | re.M):
         out[m.group(1)] = m.group(2).strip()
     return out
 
 
+def is_beta(version):
+    return "-" in version
+
+
+def sort_key(version):
+    """1.4.0-beta.2 < 1.4.0-rc.1 < 1.4.0 (estável ganha da pre-release)."""
+    base, _, pre = version.partition("-")
+    nums = tuple(int(x) for x in base.split("."))
+    if not pre:
+        return nums, (1,)
+    parts = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split("."))
+    return nums, (0, parts)
+
+
 def notes(version, sections):
-    body = sections.get(version, "").strip()
-    return (body or "Veja o CHANGELOG.md.") + REPO_FOOTER
+    body = sections.get(version, "").strip() or sections.get(version.partition("-")[0], "").strip()
+    head = BETA_NOTE if is_beta(version) else ""
+    return head + (body or "Veja o CHANGELOG.md.") + REPO_FOOTER
 
 
 def gh(*args, check=True):
@@ -51,10 +74,12 @@ def sync():
     versions = []
     for rel in rels:
         v = LEGACY.get(rel["tag_name"], rel["tag_name"]).lstrip("v")
-        if v not in sections:
+        if v not in sections and v.partition("-")[0] not in sections:
             continue
+        # Pre-releases (betas) nunca viram a "Latest".
         # Em caso de empate, a tag nova (vX.Y.Z) ganha da antiga.
-        versions.append((tuple(int(x) for x in v.split(".")), rel["tag_name"] not in LEGACY, rel))
+        if not rel["prerelease"] and not is_beta(v):
+            versions.append((sort_key(v), rel["tag_name"] not in LEGACY, rel))
         title = f"FiLume {v}"
         body = notes(v, sections)
         if rel["name"] != title or (rel["body"] or "").strip() != body.strip():

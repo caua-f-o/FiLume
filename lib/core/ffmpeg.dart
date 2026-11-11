@@ -66,8 +66,9 @@ class MediaInfo {
         pixFmt = null,
         audioIndex = null;
 
-  /// Uma imagem estática (para "imagens → PDF").
-  MediaInfo.image(MediaInfo src)
+  /// Uma imagem estática. [size] é o tamanho como ela aparece (já com a
+  /// rotação da câmera aplicada), quando conhecido.
+  MediaInfo.image(MediaInfo src, {(int, int)? size})
       : kind = 'image',
         path = src.path,
         sizeBytes = src.sizeBytes,
@@ -76,8 +77,8 @@ class MediaInfo {
         bitrate = 0,
         videoIndex = src.videoIndex,
         vCodec = src.vCodec,
-        width = src.width,
-        height = src.height,
+        width = size?.$1 ?? src.width,
+        height = size?.$2 ?? src.height,
         fps = 0,
         audioCount = 0,
         aCodec = null,
@@ -282,8 +283,35 @@ class FfTools {
   /// Descobre quais encoders realmente funcionam nesta máquina. Os de GPU são
   /// testados com um encode minúsculo, porque constar na lista do FFmpeg não
   /// significa que o hardware/driver existe.
+  /// Tamanho de uma imagem como ela aparece: fotos de celular guardam a
+  /// rotação no EXIF, e o FFmpeg a aplica ao converter.
+  Future<(int, int)?> imageDisplaySize(String path) async {
+    try {
+      final r = await Process.run(ffprobe, [
+        '-v', 'error', '-select_streams', 'v:0', '-read_intervals', '%+#1',
+        '-show_frames', '-of', 'json', p.absolute(path),
+      ], stdoutEncoding: _utf8, stderrEncoding: _utf8);
+      if (r.exitCode != 0) return null;
+      final frames = (jsonDecode(r.stdout.toString()) as Map<String, dynamic>)['frames'];
+      if (frames is! List || frames.isEmpty) return null;
+      final f = frames.first as Map<String, dynamic>;
+      final w = _num(f['width']).round(), h = _num(f['height']).round();
+      if (w <= 0 || h <= 0) return null;
+      var rotation = 0.0;
+      for (final sd in (f['side_data_list'] as List?) ?? const []) {
+        if (sd is Map && sd['rotation'] != null) rotation = _num(sd['rotation']);
+      }
+      return rotation.round().abs() % 180 == 90 ? (h, w) : (w, h);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Set<String>> detectEncoders() async {
-    const cpu = ['libx264', 'libx265', 'libsvtav1', 'libvpx-vp9', 'libopus', 'libvorbis', 'libmp3lame'];
+    const cpu = [
+      'libx264', 'libx265', 'libsvtav1', 'libvpx-vp9', 'libopus', 'libvorbis', 'libmp3lame',
+      'libwebp', 'libaom-av1', // imagens
+    ];
     const gpu = [
       'h264_nvenc', 'hevc_nvenc', 'av1_nvenc',
       'h264_qsv', 'hevc_qsv', 'av1_qsv',

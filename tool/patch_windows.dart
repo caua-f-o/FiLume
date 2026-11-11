@@ -117,6 +117,109 @@ endif()
   }
 }
 
+/// Embute o ampliador de imagens por IA (Real-ESRGAN ncnn-vulkan) e os modelos.
+void bundleUpscaler() {
+  if (!Platform.isWindows && Platform.environment['FILUME_FORCE_BUNDLE'] == null) return;
+  final root = Directory('third_party/upscaler');
+  final tmp = Directory('third_party/_dl_up');
+  const zipName = 'realesrgan-ncnn-vulkan-20220424-windows.zip';
+  try {
+    if (!File('${root.path}/realesrgan-ncnn-vulkan.exe').existsSync()) {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      tmp.createSync(recursive: true);
+      if (sh('curl', ['-fsSL', '-o', '${tmp.path}/$zipName',
+            'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/$zipName']) ||
+          sh('gh', ['release', 'download', 'v0.2.5.0', '-R', 'xinntao/Real-ESRGAN', '-p', zipName, '-D', tmp.path])) {
+        Directory('${tmp.path}/x').createSync();
+        if (sh('7z', ['x', '-y', '-o${tmp.path}/x', '${tmp.path}/$zipName']) ||
+            sh('tar', ['-xf', '${tmp.path}/$zipName', '-C', '${tmp.path}/x'])) {
+          final exe = Directory('${tmp.path}/x')
+              .listSync(recursive: true)
+              .whereType<File>()
+              .firstWhere((f) => f.path.replaceAll('\\', '/').endsWith('/realesrgan-ncnn-vulkan.exe'));
+          final src = exe.parent;
+          root.createSync(recursive: true);
+          exe.copySync('${root.path}/realesrgan-ncnn-vulkan.exe');
+          // Só o necessário: o programa, a DLL do OpenMP e os modelos (sem os exemplos).
+          final omp = File('${src.path}/vcomp140.dll');
+          if (omp.existsSync()) omp.copySync('${root.path}/vcomp140.dll');
+          copyDir(Directory('${src.path}/models'), Directory('${root.path}/models'));
+          for (final dll in const ['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll']) {
+            final f = File('C:/Windows/System32/$dll');
+            if (f.existsSync()) f.copySync('${root.path}/$dll');
+          }
+          stdout.writeln('Ampliador por IA embutido.');
+        }
+      }
+    }
+  } catch (e) {
+    stderr.writeln('aviso: ampliador por IA não embutido: $e');
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    } catch (_) {}
+  }
+
+  final cmake = File('windows/CMakeLists.txt');
+  if (cmake.existsSync() && !cmake.readAsStringSync().contains('third_party/upscaler')) {
+    cmake.writeAsStringSync('''
+
+# FiLume: ampliador de imagens por IA ao lado do executável.
+if(EXISTS "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/upscaler")
+  install(DIRECTORY "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/upscaler"
+    DESTINATION "\${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+endif()
+''', mode: FileMode.append);
+  }
+}
+
+/// Embute o motor de digitalização (linha de comando do NAPS2, que fala com
+/// drivers TWAIN e WIA).
+void bundleScanner() {
+  if (!Platform.isWindows && Platform.environment['FILUME_FORCE_BUNDLE'] == null) return;
+  final root = Directory('third_party/scanner');
+  final tmp = Directory('third_party/_dl_scan');
+  try {
+    if (!File('${root.path}/NAPS2.Console.exe').existsSync()) {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      tmp.createSync(recursive: true);
+      if (sh('gh', ['release', 'download', '-R', 'cyanfish/naps2', '-p', 'naps2-*-win-x64.zip', '-D', tmp.path]) ||
+          sh('curl', ['-fsSL', '-o', '${tmp.path}/naps2-8.2.1-win-x64.zip',
+            'https://github.com/cyanfish/naps2/releases/download/v8.2.1/naps2-8.2.1-win-x64.zip'])) {
+        final zip = tmp.listSync().whereType<File>().firstWhere((f) => f.path.endsWith('.zip'));
+        Directory('${tmp.path}/x').createSync();
+        if (sh('7z', ['x', '-y', '-o${tmp.path}/x', zip.path]) || sh('tar', ['-xf', zip.path, '-C', '${tmp.path}/x'])) {
+          final exe = Directory('${tmp.path}/x')
+              .listSync(recursive: true)
+              .whereType<File>()
+              .firstWhere((f) => f.path.replaceAll('\\', '/').endsWith('/NAPS2.Console.exe'));
+          // A pasta inteira do programa: o console depende das bibliotecas ao lado dele.
+          copyDir(exe.parent, root);
+          stdout.writeln('Motor de digitalização embutido.');
+        }
+      }
+    }
+  } catch (e) {
+    stderr.writeln('aviso: motor de digitalização não embutido: $e');
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    } catch (_) {}
+  }
+
+  final cmake = File('windows/CMakeLists.txt');
+  if (cmake.existsSync() && !cmake.readAsStringSync().contains('third_party/scanner')) {
+    cmake.writeAsStringSync('''
+
+# FiLume: motor de digitalização (NAPS2) ao lado do executável.
+if(EXISTS "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/scanner")
+  install(DIRECTORY "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/scanner"
+    DESTINATION "\${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+endif()
+''', mode: FileMode.append);
+  }
+}
+
 void main() {
   patch('windows/runner/main.cpp', [
     ('L"filume"', 'L"FiLume"'),
@@ -153,5 +256,7 @@ void main() {
     icon.copySync('windows/runner/resources/app_icon.ico');
   }
   bundlePdfTools();
+  bundleUpscaler();
+  bundleScanner();
   stdout.writeln('Runner do Windows personalizado.');
 }

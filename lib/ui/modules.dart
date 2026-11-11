@@ -14,9 +14,12 @@ import '../core/state.dart' show imageExts;
 import '../core/trim.dart';
 import 'audio_panels.dart';
 import 'pdf_panels.dart';
+import 'pdf_tray.dart';
 import 'settings_panels.dart';
 import 'tool_page.dart';
 import 'tool_panels.dart';
+import '../core/image.dart';
+import 'image_panels.dart';
 
 String? _splitHint(SplitSettings s, int n) {
   if (n <= 1) return 'não precisa dividir';
@@ -24,6 +27,7 @@ String? _splitHint(SplitSettings s, int n) {
 }
 
 final videoModule = ModuleDef(
+  id: 'video',
   title: 'Vídeo',
   one: 'vídeo',
   many: 'vídeos',
@@ -112,6 +116,7 @@ final videoModule = ModuleDef(
 );
 
 final audioModule = ModuleDef(
+  id: 'audio',
   title: 'Áudio',
   one: 'áudio',
   many: 'áudios',
@@ -174,8 +179,12 @@ final audioModule = ModuleDef(
 
 bool _pdf(MediaInfo i) => i.isPdf && !i.encrypted;
 
+/// O que entra na bandeja do organizador: PDFs abertos e imagens.
+bool mesaAccepts(MediaInfo i) => i.isImage || _pdf(i);
+
 final docsModule = ModuleDef(
-  title: 'Documentos',
+  id: 'pdf',
+  title: 'PDF',
   one: 'arquivo',
   many: 'arquivos',
   typeLabel: 'PDFs e imagens',
@@ -229,14 +238,14 @@ final docsModule = ModuleDef(
     ToolDef(
       label: 'Organizar',
       icon: Icons.dashboard_customize_outlined,
-      needs: 'PDFs',
-      accepts: _pdf,
+      needs: 'PDFs ou imagens',
+      accepts: mesaAccepts,
       panel: (s) => PdfOrganizeView(state: s),
       workspace: (s) => OrganizerWorkspace(state: s),
-      jobs: (s, ready) => [buildPdfOrganizeJob(s.organizer.pages, s.outputDir, s.pdf!)],
+      jobs: (s, ready) => [buildPdfOrganizeJob(s.organizer.pages, s.outputDir, s.pdf!, s.pdfConvert.fit)],
       blocked: (s, ready) {
         s.organizer.sync(ready);
-        return s.organizer.pages.isEmpty ? 'Nenhuma página na mesa' : null;
+        return s.organizer.pages.isEmpty ? 'Nenhuma página na bandeja' : null;
       },
       actionLabel: (s, ready) => 'Salvar PDF com ${s.organizer.pages.length} páginas',
     ),
@@ -271,6 +280,79 @@ final docsModule = ModuleDef(
           [for (final i in ready) buildPdfPasswordJob(i, s.pdfPassword, s.outputDir, s.pdf!)],
       blocked: (s, ready) => s.pdfPassword.password.isEmpty ? 'Digite a senha' : null,
       hint: (s, info) => info.encrypted ? 'tem senha' : null,
+    ),
+  ],
+);
+
+// --------------------------------------------------------------------- imagem
+
+final imageModule = ModuleDef(
+  id: 'image',
+  title: 'Imagem',
+  one: 'imagem',
+  many: 'imagens',
+  typeLabel: 'Imagens',
+  docs: true, // mesma linha de informações das imagens do PDF Estúdio
+  extensions: const [...imageExts, 'avif'],
+  inputs: (s) => s.images,
+  tools: [
+    ToolDef(
+      label: 'Ampliar',
+      icon: Icons.auto_awesome,
+      panel: (s) => UpscaleView(state: s),
+      jobs: (s, ready) => [
+        for (final i in ready) buildUpscaleJob(i, s.upscale, s.outputDir, s.encoders, s.upscaler),
+      ],
+      hint: (s, info) {
+        final (w, h) = s.upscale.outSize(info);
+        return '→ $w×$h';
+      },
+    ),
+    ToolDef(
+      label: 'Converter',
+      icon: Icons.swap_horiz,
+      panel: (s) => ImageConvertView(state: s),
+      jobs: (s, ready) => [
+        for (final i in ready) buildImageConvertJob(i, s.imageConvert, s.outputDir, s.encoders),
+      ],
+      hint: (s, info) => '→ ${s.imageConvert.format.label}',
+    ),
+    ToolDef(
+      label: 'Comprimir',
+      icon: Icons.compress,
+      panel: (s) => ImageCompressView(state: s),
+      jobs: (s, ready) => [
+        for (final i in ready) buildImageCompressJob(i, s.imageCompress, s.outputDir, s.encoders),
+      ],
+      hint: (s, info) {
+        final target = s.imageCompress.targetBytes(info);
+        final format = s.imageCompress.outFormat(info, s.encoders);
+        if (target == null) return '→ ${format.label}';
+        if (!format.lossy) return 'escolha JPG, WebP ou AVIF';
+        if (target >= info.sizeBytes) return 'já é menor que o alvo';
+        return '→ até ${fmtBytes(target)}';
+      },
+    ),
+    ToolDef(
+      label: 'Redimensionar',
+      icon: Icons.aspect_ratio,
+      panel: (s) => ImageResizeView(state: s),
+      jobs: (s, ready) => [
+        for (final i in ready) buildImageResizeJob(i, s.imageResize, s.outputDir, s.encoders),
+      ],
+      hint: (s, info) {
+        final (w, h) = s.imageResize.outSize(info);
+        return '→ $w×$h';
+      },
+    ),
+    ToolDef(
+      label: 'Girar',
+      icon: Icons.rotate_right,
+      panel: (s) => ImageRotateView(state: s),
+      jobs: (s, ready) => [
+        for (final i in ready) buildImageRotateJob(i, s.imageRotate.op, s.outputDir, s.encoders),
+      ],
+      hint: (s, info) => s.imageRotate.op.label,
     ),
   ],
 );

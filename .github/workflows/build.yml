@@ -1,9 +1,14 @@
 name: Build FiLume (Windows)
 
+# main = versões estáveis (Latest); dev = betas (pre-release, ex.: 1.4.0-beta.1).
 on:
   push:
-    branches: [main, master]
+    branches: [main, dev]
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref_name }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -74,6 +79,11 @@ jobs:
           New-Item -ItemType Directory -Force smoke | Out-Null
           & "$env:FILUME_FFMPEG_DIR/ffmpeg.exe" -v error -y -f lavfi -i testsrc2=s=640x360:r=30:d=40 -f lavfi -i sine=d=40 -c:v libx264 -g 60 -b:v 800k -c:a aac "smoke/teste 100%.mp4"
           dart run tool/core_test.dart "smoke/teste 100%.mp4" smoke/out
+          $up = 'build/windows/x64/runner/Release/upscaler'
+          if (Test-Path $up) { $env:FILUME_UPSCALER_DIR = (Resolve-Path $up).Path }
+          dart run tool/image_test.dart smoke/img
+          $scan = 'build/windows/x64/runner/Release/scanner/NAPS2.Console.exe'
+          if (Test-Path $scan) { "Scanners TWAIN vistos pelo motor:"; & $scan --listdevices --driver twain; "codigo: $LASTEXITCODE" } else { "motor de digitalizacao ausente" }
 
       - name: Empacotar
         shell: pwsh
@@ -91,7 +101,18 @@ jobs:
       - name: Publicar em Releases (só quando a versão é nova)
         shell: pwsh
         run: |
-          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9A-Za-z.\-]+)').Matches[0].Groups[1].Value
+          $beta = $version.Contains('-')
+          $branch = '${{ github.ref_name }}'
+          # Estável só sai do main; beta só sai do dev. O resto fica só como artefato do build.
+          if ($branch -eq 'main' -and $beta) {
+            Write-Host "$version é beta: no main só se publica versão estável. Nada a publicar."
+            exit 0
+          }
+          if ($branch -ne 'main' -and -not $beta) {
+            Write-Host "$version é estável: ela só é publicada pelo main. Nada a publicar."
+            exit 0
+          }
           $tag = "v$version"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
@@ -99,4 +120,8 @@ jobs:
             exit 0
           }
           python tool/sync_releases.py notes $version notes.md
-          gh release create $tag FiLume-windows-x64.zip --title "FiLume $version" --notes-file notes.md --latest
+          if ($beta) {
+            gh release create $tag FiLume-windows-x64.zip --target $env:GITHUB_SHA --title "FiLume $version" --notes-file notes.md --prerelease --latest=false
+          } else {
+            gh release create $tag FiLume-windows-x64.zip --target $env:GITHUB_SHA --title "FiLume $version" --notes-file notes.md --latest
+          }

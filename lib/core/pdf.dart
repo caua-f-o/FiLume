@@ -401,9 +401,10 @@ Job buildPdfSplitJob(MediaInfo info, PdfSplitSettings settings, String? outDir, 
 
 // --------------------------------------------------------- unir e organizar
 
-/// Uma página na mesa do organizador.
+/// Uma página na bandeja do organizador: uma página de PDF ou uma imagem
+/// (arquivo ou digitalização).
 class PageRef {
-  PageRef(this.doc, this.page, [this.rotation = 0]);
+  PageRef(this.doc, this.page, [this.rotation = 0, this.skew = 0]);
   final MediaInfo doc;
 
   /// Número da página no arquivo de origem (começa em 1).
@@ -411,28 +412,37 @@ class PageRef {
 
   /// Giro extra em graus: 0, 90, 180 ou 270.
   int rotation;
+
+  /// Correção de inclinação ("endireitar"), em graus; só para imagens.
+  double skew;
+
+  /// Endireitamento em andamento (mostra um indicador na miniatura).
+  bool busy = false;
+
+  bool get isImage => doc.isImage;
 }
 
-Future<void> _assemble(JobCtx ctx, PdfTools tools, List<PageRef> pages, String out) async {
+/// Monta o PDF final com o qpdf: [parts] são (arquivo, página, giro).
+Future<void> _assemble(JobCtx ctx, PdfTools tools, List<(String, int, int)> parts, String out) async {
   final args = <String>['--empty', '--pages'];
   var i = 0;
-  while (i < pages.length) {
+  while (i < parts.length) {
     var j = i;
-    while (j + 1 < pages.length && pages[j + 1].doc.path == pages[i].doc.path) {
+    while (j + 1 < parts.length && parts[j + 1].$1 == parts[i].$1) {
       j++;
     }
     args.addAll([
-      pages[i].doc.path,
+      parts[i].$1,
       // Sequências crescentes viram "a-b"; o resto vai página a página.
-      _orderedRanges([for (var k = i; k <= j; k++) pages[k].page]),
+      _orderedRanges([for (var k = i; k <= j; k++) parts[k].$2]),
     ]);
     i = j + 1;
   }
   args.add('--');
   for (final angle in const [90, 180, 270]) {
     final idx = [
-      for (var k = 0; k < pages.length; k++)
-        if (pages[k].rotation % 360 == angle) k + 1,
+      for (var k = 0; k < parts.length; k++)
+        if (parts[k].$3 % 360 == angle) k + 1,
     ];
     if (idx.isNotEmpty) args.add('--rotate=+$angle:${compactRanges(idx)}');
   }
@@ -470,21 +480,41 @@ Job buildPdfMergeJob(List<MediaInfo> items, String? outDir, PdfTools tools) {
   );
 }
 
-Job buildPdfOrganizeJob(List<PageRef> pages, String? outDir, PdfTools tools) {
-  final snapshot = [for (final r in pages) PageRef(r.doc, r.page, r.rotation)];
+Job buildPdfOrganizeJob(List<PageRef> pages, String? outDir, PdfTools tools, [PageFit fit = PageFit.a4]) {
+  final snapshot = [for (final r in pages) PageRef(r.doc, r.page, r.rotation, r.skew)];
   final first = snapshot.first.doc;
+  final images = snapshot.where((r) => r.isImage).length;
   return Job(
     title: '${p.basenameWithoutExtension(first.path)}_organizado.pdf',
     kind: 'Organizar',
     detail: '${snapshot.length} páginas',
     body: (ctx) async {
       final out = await _outFile(outDir, first, '_organizado');
-      ctx.report(0, stage: 'Montando páginas');
+      final work = await Directory.systemTemp.createTemp('filume_mesa_');
       try {
-        await _assemble(ctx, tools, snapshot, out);
+        // Imagens e digitalizações viram, cada uma, um PDF de uma página.
+        final parts = <(String, int, int)>[];
+        var done = 0;
+        for (final r in snapshot) {
+          if (!r.isImage) {
+            parts.add((r.doc.path, r.page, r.rotation));
+            continue;
+          }
+          ctx.report(0.9 * done / images, stage: 'Imagem ${done + 1} de $images');
+          final pdf = p.join(work.path, 'img_$done.pdf');
+          await writeImagesPdf(ctx, [r.doc], fit, pdf, skew: [r.skew]);
+          parts.add((pdf, 1, r.rotation));
+          done++;
+        }
+        ctx.report(0.92, stage: 'Montando páginas');
+        await _assemble(ctx, tools, parts, out);
       } catch (_) {
         _delete(out);
         rethrow;
+      } finally {
+        try {
+          work.deleteSync(recursive: true);
+        } catch (_) {}
       }
       return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out);
     },
@@ -578,6 +608,118 @@ Job buildPdfToImagesJob(MediaInfo info, PdfConvertSettings settings, String? out
 
 String _num(double v) => v.toStringAsFixed(2);
 
+/// Grava um PDF com uma imagem por página (JPEG embutido, sem dependências).
+/// [skew] traz, por imagem, o ângulo de correção de inclinação em graus.
+Future<void> writeImagesPdf(
+  JobCtx ctx,
+  List<MediaInfo> images,
+  PageFit fit,
+  String out, {
+  List<double> skew = const [],
+  void Function(int index)? onImage,
+}) async {
+  final work = await Directory.systemTemp.createTemp('filume_pdf_');
+  RandomAccessFile? raf;
+  try {
+      raf = await File(out).open(mode: FileMode.write);
+      var offset = 0;
+      final offsets = <int>[];
+      Future<void> write(List<int> bytes) async {
+        await raf!.writeFrom(bytes);
+        offset += bytes.length;
+      }
+
+      Future<void> obj(String body) async {
+        offsets.add(offset);
+        await write('${offsets.length} 0 obj\n$body\nendobj\n'.codeUnits);
+      }
+
+      // Objetos: 1 catálogo, 2 árvore de páginas; para a imagem k (0..):
+      // 3+3k página, 4+3k conteúdo, 5+3k imagem.
+      await write('%PDF-1.4\n%âãÏÓ\n'.codeUnits);
+      await obj('<< /Type /Catalog /Pages 2 0 R >>');
+      await obj('<< /Type /Pages /Count ${images.length} '
+          '/Kids [${[for (var k = 0; k < images.length; k++) '${3 + 3 * k} 0 R'].join(' ')}] >>');
+
+      for (var k = 0; k < images.length; k++) {
+        onImage?.call(k);
+        final jpg = p.join(work.path, 'i$k.jpg');
+        // Tudo vira JPEG padrão (uma imagem por vez na memória). Transparência
+        // é achatada sobre branco; se o filtro não existir, vai sem ele.
+        final alpha =
+            RegExp(r'^(rgba|bgra|argb|abgr|ya|yuva|gbrap|pal8)').hasMatch(images[k].pixFmt ?? '');
+        // "Endireitar": gira pelo ângulo medido, preenchendo os cantos de branco.
+        final angle = k < skew.length ? skew[k] : 0.0;
+        final rotate = angle == 0 ? null : 'rotate=a=${(angle * 3.141592653589793 / 180).toStringAsFixed(6)}:c=white:bilinear=1';
+        Future<void> convert(bool flatten) => ctx.run.ffmpeg(ctx.tools, [
+              '-i', images[k].path,
+              if (flatten) ...[
+                '-filter_complex',
+                'color=white:s=16x16,format=rgb24[c];[c][0:v]scale2ref[c][i];[c][i]overlay=shortest=1'
+                    '${rotate == null ? '' : ',$rotate'}',
+              ] else if (rotate != null) ...['-vf', rotate],
+              '-frames:v', '1', '-q:v', '2', '-pix_fmt', 'yuvj420p', jpg,
+            ]);
+        if (alpha) {
+          try {
+            await convert(true);
+          } on FfError {
+            await convert(false);
+          }
+        } else {
+          await convert(false);
+        }
+        final bytes = await File(jpg).readAsBytes();
+        final dim = jpegSize(bytes);
+        if (dim == null) throw FfError('Não foi possível ler "${p.basename(images[k].path)}".');
+        final (w, h, comps) = dim;
+
+        // Página: A4 (em pé ou deitada conforme a imagem) ou proporcional à imagem.
+        double pw, ph, dw, dh;
+        if (fit == PageFit.a4) {
+          final landscape = w > h;
+          pw = landscape ? 841.89 : 595.28;
+          ph = landscape ? 595.28 : 841.89;
+          final scale = (pw / w) < (ph / h) ? pw / w : ph / h;
+          dw = w * scale;
+          dh = h * scale;
+        } else {
+          pw = dw = 595.28;
+          ph = dh = 595.28 * h / w;
+        }
+        final content = 'q ${_num(dw)} 0 0 ${_num(dh)} ${_num((pw - dw) / 2)} ${_num((ph - dh) / 2)} cm /Im0 Do Q';
+        await obj('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${_num(pw)} ${_num(ph)}] '
+            '/Resources << /XObject << /Im0 ${5 + 3 * k} 0 R >> >> /Contents ${4 + 3 * k} 0 R >>');
+        await obj('<< /Length ${content.length} >>\nstream\n$content\nendstream');
+        offsets.add(offset);
+        await write('${offsets.length} 0 obj\n<< /Type /XObject /Subtype /Image /Width $w /Height $h '
+                '/ColorSpace ${comps == 1 ? '/DeviceGray' : '/DeviceRGB'} /BitsPerComponent 8 '
+                '/Filter /DCTDecode /Length ${bytes.length} >>\nstream\n'
+            .codeUnits);
+        await write(bytes);
+        await write('\nendstream\nendobj\n'.codeUnits);
+        _delete(jpg);
+      }
+
+      final xref = offset;
+      final table = StringBuffer('xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n');
+      for (final o in offsets) {
+        table.write('${o.toString().padLeft(10, '0')} 00000 n \n');
+      }
+      table.write('trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n');
+      await write(table.toString().codeUnits);
+      await raf.close();
+      raf = null;
+  } catch (_) {
+    await raf?.close();
+    rethrow;
+  } finally {
+    try {
+      work.deleteSync(recursive: true);
+    } catch (_) {}
+  }
+}
+
 Job buildImagesToPdfJob(List<MediaInfo> items, PdfConvertSettings settings, String? outDir) {
   final s = settings.copy();
   final images = List<MediaInfo>.of(items);
@@ -588,102 +730,17 @@ Job buildImagesToPdfJob(List<MediaInfo> items, PdfConvertSettings settings, Stri
     detail: 'página ${s.fit.label.toLowerCase()}',
     body: (ctx) async {
       final out = await _outFile(outDir, first, '');
-      final work = await Directory.systemTemp.createTemp('filume_pdf_');
-      RandomAccessFile? raf;
       try {
-        raf = await File(out).open(mode: FileMode.write);
-        var offset = 0;
-        final offsets = <int>[];
-        Future<void> write(List<int> bytes) async {
-          await raf!.writeFrom(bytes);
-          offset += bytes.length;
-        }
-
-        Future<void> obj(String body) async {
-          offsets.add(offset);
-          await write('${offsets.length} 0 obj\n$body\nendobj\n'.codeUnits);
-        }
-
-        // Objetos: 1 catálogo, 2 árvore de páginas; para a imagem k (0..):
-        // 3+3k página, 4+3k conteúdo, 5+3k imagem.
-        await write('%PDF-1.4\n%âãÏÓ\n'.codeUnits);
-        await obj('<< /Type /Catalog /Pages 2 0 R >>');
-        await obj('<< /Type /Pages /Count ${images.length} '
-            '/Kids [${[for (var k = 0; k < images.length; k++) '${3 + 3 * k} 0 R'].join(' ')}] >>');
-
-        for (var k = 0; k < images.length; k++) {
-          ctx.report(k / images.length, stage: 'Imagem ${k + 1} de ${images.length}');
-          final jpg = p.join(work.path, 'i$k.jpg');
-          // Tudo vira JPEG padrão (uma imagem por vez na memória). Transparência
-          // é achatada sobre branco; se o filtro não existir, vai sem ele.
-          final alpha =
-              RegExp(r'^(rgba|bgra|argb|abgr|ya|yuva|gbrap|pal8)').hasMatch(images[k].pixFmt ?? '');
-          Future<void> convert(bool flatten) => ctx.run.ffmpeg(ctx.tools, [
-                '-i', images[k].path,
-                if (flatten) ...[
-                  '-filter_complex',
-                  'color=white:s=16x16,format=rgb24[c];[c][0:v]scale2ref[c][i];[c][i]overlay=shortest=1',
-                ],
-                '-frames:v', '1', '-q:v', '2', '-pix_fmt', 'yuvj420p', jpg,
-              ]);
-          if (alpha) {
-            try {
-              await convert(true);
-            } on FfError {
-              await convert(false);
-            }
-          } else {
-            await convert(false);
-          }
-          final bytes = await File(jpg).readAsBytes();
-          final dim = jpegSize(bytes);
-          if (dim == null) throw FfError('Não foi possível ler "${p.basename(images[k].path)}".');
-          final (w, h, comps) = dim;
-
-          // Página: A4 (em pé ou deitada conforme a imagem) ou proporcional à imagem.
-          double pw, ph, dw, dh;
-          if (s.fit == PageFit.a4) {
-            final landscape = w > h;
-            pw = landscape ? 841.89 : 595.28;
-            ph = landscape ? 595.28 : 841.89;
-            final scale = (pw / w) < (ph / h) ? pw / w : ph / h;
-            dw = w * scale;
-            dh = h * scale;
-          } else {
-            pw = dw = 595.28;
-            ph = dh = 595.28 * h / w;
-          }
-          final content = 'q ${_num(dw)} 0 0 ${_num(dh)} ${_num((pw - dw) / 2)} ${_num((ph - dh) / 2)} cm /Im0 Do Q';
-          await obj('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${_num(pw)} ${_num(ph)}] '
-              '/Resources << /XObject << /Im0 ${5 + 3 * k} 0 R >> >> /Contents ${4 + 3 * k} 0 R >>');
-          await obj('<< /Length ${content.length} >>\nstream\n$content\nendstream');
-          offsets.add(offset);
-          await write('${offsets.length} 0 obj\n<< /Type /XObject /Subtype /Image /Width $w /Height $h '
-                  '/ColorSpace ${comps == 1 ? '/DeviceGray' : '/DeviceRGB'} /BitsPerComponent 8 '
-                  '/Filter /DCTDecode /Length ${bytes.length} >>\nstream\n'
-              .codeUnits);
-          await write(bytes);
-          await write('\nendstream\nendobj\n'.codeUnits);
-          _delete(jpg);
-        }
-
-        final xref = offset;
-        final table = StringBuffer('xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n');
-        for (final o in offsets) {
-          table.write('${o.toString().padLeft(10, '0')} 00000 n \n');
-        }
-        table.write('trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n');
-        await write(table.toString().codeUnits);
-        await raf.close();
-        raf = null;
+        await writeImagesPdf(
+          ctx,
+          images,
+          s.fit,
+          out,
+          onImage: (k) => ctx.report(k / images.length, stage: 'Imagem ${k + 1} de ${images.length}'),
+        );
       } catch (_) {
-        await raf?.close();
         _delete(out);
         rethrow;
-      } finally {
-        try {
-          work.deleteSync(recursive: true);
-        } catch (_) {}
       }
       return JobResult(
         '${images.length} ${images.length == 1 ? 'página' : 'páginas'} · ${fmtBytes(File(out).lengthSync())}',

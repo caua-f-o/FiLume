@@ -10,11 +10,14 @@ import 'compress.dart';
 import 'convert.dart';
 import 'crop.dart';
 import 'ffmpeg.dart';
+import 'image.dart';
 import 'job.dart';
 import 'merge.dart';
 import 'mux.dart';
 import 'pdf.dart';
 import 'pdf_workspace.dart';
+import 'prefs.dart';
+import 'scan.dart';
 import 'split.dart';
 import 'streams.dart';
 import 'trim.dart';
@@ -30,7 +33,7 @@ const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff', 'gif'];
 
 /// Lista de arquivos de um módulo.
 class InputList {
-  InputList(this._app, {required this.audioModule, this.docs = false});
+  InputList(this._app, {required this.audioModule, this.docs = false, this.images = false});
   final AppState _app;
 
   /// No módulo de áudio basta ter uma faixa de áudio (vídeos também servem).
@@ -38,6 +41,9 @@ class InputList {
 
   /// Lista do módulo Documentos: aceita PDFs e imagens.
   final bool docs;
+
+  /// Lista do módulo Imagem: só imagens.
+  final bool images;
   final List<InputItem> items = [];
   InputItem? _selected;
   bool _probing = false;
@@ -99,6 +105,16 @@ class InputList {
         if (pending.isEmpty) break;
         final item = pending.first;
         try {
+          if (images) {
+            final img = await t.probe(item.path);
+            if (img.hasVideo && img.width > 0) {
+              item.info = MediaInfo.image(img, size: await t.imageDisplaySize(item.path));
+            } else {
+              item.error = 'Não foi possível ler esta imagem.';
+            }
+            _app.touch();
+            continue;
+          }
           if (docs) {
             final ext = p.extension(item.path).toLowerCase();
             if (ext == '.pdf') {
@@ -111,7 +127,7 @@ class InputList {
             } else if (imageExts.contains(ext.replaceFirst('.', ''))) {
               final img = await t.probe(item.path);
               if (img.hasVideo && img.width > 0) {
-                item.info = MediaInfo.image(img);
+                item.info = MediaInfo.image(img, size: await t.imageDisplaySize(item.path));
               } else {
                 item.error = 'Não foi possível ler esta imagem.';
               }
@@ -150,6 +166,18 @@ class JobQueue extends ChangeNotifier {
   bool _dirty = false;
 
   bool get busy => jobs.any((j) => !j.finished);
+
+  /// Chamado quando uma tarefa termina com sucesso.
+  void Function(Job job)? onDone;
+
+  Job? get running {
+    for (final j in jobs) {
+      if (j.status == JobStatus.running) return j;
+    }
+    return null;
+  }
+
+  int get waiting => jobs.where((j) => j.status == JobStatus.queued).length;
 
   void addAll(Iterable<Job> items) {
     jobs.addAll(items);
@@ -226,6 +254,7 @@ class JobQueue extends ChangeNotifier {
         ..status = JobStatus.done
         ..progress = 1
         ..stage = 'Concluído';
+      onDone?.call(job);
     } on JobCanceled {
       job
         ..status = JobStatus.canceled
@@ -263,6 +292,16 @@ class AppState extends ChangeNotifier {
   late final InputList video = InputList(this, audioModule: false);
   late final InputList audio = InputList(this, audioModule: true);
   late final InputList docs = InputList(this, audioModule: false, docs: true);
+  late final InputList images = InputList(this, audioModule: false, images: true);
+
+  // Módulo de imagem
+  UpscalerTools? upscaler;
+  final ImageConvertSettings imageConvert = ImageConvertSettings();
+  final ImageCompressSettings imageCompress = ImageCompressSettings();
+  final ImageResizeSettings imageResize = ImageResizeSettings();
+  final ImageRotateSettings imageRotate = ImageRotateSettings();
+  final UpscaleSettings upscale = UpscaleSettings();
+  Set<String> get encoders => caps.usable;
 
   // Módulo de documentos
   PdfTools? pdf;
@@ -271,6 +310,14 @@ class AppState extends ChangeNotifier {
   final PdfConvertSettings pdfConvert = PdfConvertSettings();
   final PdfPasswordSettings pdfPassword = PdfPasswordSettings();
   final Organizer organizer = Organizer();
+
+  /// Bandeja do PDF Estúdio: "tray" (miniaturas) ou "list" (só os arquivos).
+  String trayView = 'tray';
+
+  /// Largura das miniaturas da bandeja (o controle de zoom).
+  double trayZoom = 148;
+  ScanTools? scanner;
+  final ScanSettings scan = ScanSettings();
   late final PdfThumbs thumbs = PdfThumbs(touch);
   String? outputDir;
   final CompressSettings compress = CompressSettings();
@@ -288,6 +335,9 @@ class AppState extends ChangeNotifier {
   final AudioMergeSettings audioMerge = AudioMergeSettings();
   final MixSettings mix = MixSettings();
 
+  /// No PDF Estúdio: true = ferramenta aberta; false = tela de entrada.
+  bool pdfOpen = false;
+
   /// Ferramenta aberta em cada módulo (lembrada ao trocar de módulo).
   final Map<String, int> toolIndex = {};
 
@@ -301,12 +351,20 @@ class AppState extends ChangeNotifier {
   Directory? _thumbDir;
   final Map<String, Future<String?>> _thumbs = {};
   final JobQueue queue = JobQueue();
+  final Prefs prefs = Prefs();
 
   Future<void> init() async {
+    queue.onDone = (job) {
+      final r = job.result;
+      if (r == null) return;
+      prefs.addRecent(Recent(title: job.title, detail: r.summary, path: r.revealPath, module: job.module));
+    };
     toolsLoading = true;
     notifyListeners();
     tools = await FfTools.locate();
     pdf = await PdfTools.locate();
+    upscaler = UpscalerTools.locate();
+    scanner = ScanTools.locate();
     queue.tools = tools;
     toolsLoading = false;
     notifyListeners();
@@ -315,6 +373,7 @@ class AppState extends ChangeNotifier {
     video.probePending();
     audio.probePending();
     docs.probePending();
+    images.probePending();
     caps = EncoderCaps(await t.detectEncoders());
     if (!caps.supports(compress.codec)) {
       for (final c in VCodec.values) {

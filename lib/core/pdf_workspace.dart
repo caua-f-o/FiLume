@@ -7,8 +7,8 @@ import 'package:path/path.dart' as p;
 import 'ffmpeg.dart';
 import 'pdf.dart';
 
-/// Mesa do organizador: as páginas de todos os PDFs da lista, na ordem em que
-/// vão sair, com giro e seleção.
+/// Bandeja do organizador: as páginas de todos os PDFs e as imagens da lista
+/// (arquivos ou digitalizações), na ordem em que vão sair, com giro e seleção.
 class Organizer {
   final List<PageRef> pages = [];
   final Set<PageRef> selected = {};
@@ -46,6 +46,13 @@ class Organizer {
   void rotate(Iterable<PageRef> refs, int delta) {
     for (final r in refs) {
       r.rotation = (r.rotation + delta) % 360;
+    }
+  }
+
+  /// Zera o "endireitar" das páginas.
+  void straightenReset(Iterable<PageRef> refs) {
+    for (final r in refs) {
+      r.skew = 0;
     }
   }
 
@@ -101,6 +108,28 @@ class PdfThumbs {
     _docs[doc.path] = _DocThumbs(dir.path);
     _queue.add(doc);
     _pump(tools!);
+  }
+
+  final Map<String, Future<String?>> _views = {};
+
+  /// Página de PDF desenhada em tamanho de leitura, para o visualizador.
+  Future<String?> renderPage(MediaInfo doc, int page, PdfTools? tools) {
+    final gs = tools?.gs;
+    if (_disposed || gs == null) return Future.value(null);
+    return _views['${doc.path}#$page'] ??= () async {
+      try {
+        final root = _root ??= Directory.systemTemp.createTempSync('filume_paginas_');
+        final out = p.join(root.path, 'ver_${_views.length}.jpg');
+        final r = await Process.run(gs, [
+          '-dNOPAUSE', '-dBATCH', '-dSAFER', '-dQUIET',
+          '-sDEVICE=jpeg', '-dJPEGQ=88', '-r130', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4',
+          '-dFirstPage=$page', '-dLastPage=$page', '-sOutputFile=$out', doc.path,
+        ]);
+        return r.exitCode == 0 && File(out).existsSync() ? out : null;
+      } catch (_) {
+        return null;
+      }
+    }();
   }
 
   /// Arquivo da miniatura, ou null se a página ainda não foi desenhada.

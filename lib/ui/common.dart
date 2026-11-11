@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
 
+import 'geo.dart';
+
 /// Cartão com um degradê bem sutil, usado em todos os painéis.
 class Panel extends StatelessWidget {
-  const Panel({super.key, required this.child, this.padding = const EdgeInsets.all(16)});
+  const Panel({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+    this.motif,
+    this.motifAlign = Alignment.bottomRight,
+    this.motifSize = 120,
+  });
   final Widget child;
   final EdgeInsetsGeometry padding;
+
+  /// Detalhe geométrico desenhado num canto, atrás do conteúdo.
+  final String? motif;
+  final Alignment motifAlign;
+  final double motifSize;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +39,30 @@ class Panel extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
-        child: Padding(padding: padding, child: child),
+        child: Stack(
+          fit: StackFit.passthrough,
+          children: [
+            if (motif != null)
+              Positioned.fill(
+                child: Align(
+                  alignment: motifAlign,
+                  child: Transform.translate(
+                    offset: Offset(motifAlign.x * motifSize * 0.14, motifAlign.y * motifSize * 0.14),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 260),
+                      child: Motif(
+                        motif!,
+                        key: ValueKey(motif),
+                        size: motifSize,
+                        color: cs.primary.withValues(alpha: 0.13),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Padding(padding: padding, child: child),
+          ],
+        ),
       ),
     );
   }
@@ -253,10 +290,12 @@ class _PresetFieldState extends State<PresetField> {
           runSpacing: 6,
           children: [
             for (final preset in widget.presets)
-              ActionChip(
+              ChoiceChip(
                 label: Text(widget.presetLabel(preset)),
+                selected: (widget.value - preset).abs() < 1e-9,
+                showCheckmark: false,
                 visualDensity: VisualDensity.compact,
-                onPressed: () {
+                onSelected: (_) {
                   _ctrl.text = widget.format(preset);
                   setState(() => _invalid = false);
                   widget.onChanged(preset);

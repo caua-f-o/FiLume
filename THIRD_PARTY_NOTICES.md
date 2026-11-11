@@ -11,6 +11,9 @@ Cada um segue a sua própria licença, e o código-fonte está disponível nos e
 | FFmpeg / FFprobe (build GPL da BtbN) | n-estável mais recente na data do build | GPL v3 | https://github.com/BtbN/FFmpeg-Builds · https://ffmpeg.org/download.html |
 | Ghostscript | 10.08.0 | **AGPL v3** | https://github.com/ArtifexSoftware/ghostpdl-downloads/releases · https://ghostscript.com |
 | qpdf | 12.4.2 | Apache 2.0 | https://github.com/qpdf/qpdf |
+| Real-ESRGAN ncnn-vulkan (programa e modelos) | 20220424 | BSD 3-Clause | https://github.com/xinntao/Real-ESRGAN · https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan |
+| ncnn | — | BSD 3-Clause | https://github.com/Tencent/ncnn |
+| NAPS2 (motor de digitalização por linha de comando) | 8.x | GPL v2 ou posterior | https://github.com/cyanfish/naps2 |
 | Visual C++ Runtime | — | Microsoft Redistributable | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
 
 Bibliotecas usadas pelo app: media_kit (MIT, com libmpv), window_manager (MIT), desktop_drop (MIT),
