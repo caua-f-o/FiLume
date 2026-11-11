@@ -3,16 +3,25 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
-## [1.4.0-beta.1] — 2026-11-11
+## [1.5.0-beta.1] — 2026-11-11
 
 ### Adicionado
 - **Módulo Imagem:** ampliar (hiperescalador por IA com Real-ESRGAN, modo clássico e modo pixel art), converter (JPG, PNG, WebP, AVIF, BMP, TIFF), comprimir (por qualidade, tamanho ou porcentagem), redimensionar e girar.
+- **Bandeja de páginas** (em "Organizar" do PDF Estúdio), no estilo do NAPS2: mistura PDFs, imagens e digitalizações; visão em miniaturas com controle de zoom ou lista simples; visualizador com zoom; menu de contexto com girar, inverter e endireitar; digitalização por scanner (TWAIN ou WIA).
+
+### Alterado
+- Os detalhes geométricos voltaram ao traço simples e agora aparecem em todas as telas (painéis de Vídeo, Áudio, PDF e Imagem).
+- Tudo que cai no PDF Estúdio abre na bandeja; imagens soltas na tela inicial vão para o módulo Imagem.
+- Fotos de celular giradas (EXIF) agora aparecem com as dimensões certas.
+
+## [1.4.0] — 2026-11-10
+
+### Adicionado
 - **Tela inicial:** área para soltar qualquer arquivo (o FiLume abre a ferramenta certa), categorias, arquivos recentes e a fila em andamento.
 - **PDF Estúdio:** o PDF ganhou área própria, com entrada dedicada e as ferramentas em cartões.
-- **Bandeja de páginas** (em "Organizar"), no estilo do NAPS2: mistura PDFs, imagens e digitalizações; visão em miniaturas com controle de zoom ou lista simples; visualizador com zoom; menu de contexto com girar, inverter e endireitar; digitalização por scanner (TWAIN ou WIA).
 - **Ajustes:** tema (sistema, claro, escuro), cores (uma por ferramenta, padrão FiLume, cor de destaque do Windows ou paleta Material), tela ao abrir e histórico de recentes.
 - **Botão de processo animado:** a seta vira uma barrinha, o enchimento acompanha o progresso real e termina em "Concluído".
-- Detalhes geométricos em todas as telas (cartões, painéis de Vídeo, Áudio, PDF e Imagem), cada um ligado ao que o lugar faz.
+- Detalhes geométricos nos cartões, cada um ligado ao que o lugar faz.
 
 ### Alterado
 - O módulo "Documentos" passou a se chamar PDF Estúdio; a licença do projeto agora é GPL-3.0.

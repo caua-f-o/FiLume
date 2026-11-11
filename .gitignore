@@ -15,3 +15,4 @@ pubspec.lock
 .metadata
 # Motores de PDF baixados no build
 /third_party/
+__pycache__/
