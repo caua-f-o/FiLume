@@ -13,7 +13,6 @@ Cada um segue a sua própria licença, e o código-fonte está disponível nos e
 | qpdf | 12.4.2 | Apache 2.0 | https://github.com/qpdf/qpdf |
 | Real-ESRGAN ncnn-vulkan (programa e modelos) | 20220424 | BSD 3-Clause | https://github.com/xinntao/Real-ESRGAN · https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan |
 | ncnn | — | BSD 3-Clause | https://github.com/Tencent/ncnn |
-| NAPS2 (motor de digitalização por linha de comando) | 8.x | GPL v2 ou posterior | https://github.com/cyanfish/naps2 |
 | Visual C++ Runtime | — | Microsoft Redistributable | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
 
 Bibliotecas usadas pelo app: media_kit (MIT, com libmpv), window_manager (MIT), desktop_drop (MIT),

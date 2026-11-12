@@ -13,16 +13,16 @@ import 'modules.dart';
 import 'theme.dart';
 
 /// Envia cada arquivo para a lista do módulo certo e devolve o módulo do
-/// primeiro arquivo reconhecido (para onde a tela deve ir).
-/// No PDF Estúdio ([pdfStudio]) as imagens ficam lá mesmo, para virar PDF.
-String? routeFiles(AppState state, List<String> paths, {bool pdfStudio = false}) {
+/// primeiro arquivo reconhecido (para onde a tela deve ir). PDFs não entram
+/// em lista nenhuma: ficam em [AppState.pendingPdfs] para o FiLume PDF.
+String? routeFiles(AppState state, List<String> paths) {
   String? target;
   for (final path in paths) {
     final ext = p.extension(path).toLowerCase().replaceFirst('.', '');
     final String module;
-    if (ext == 'pdf' || (pdfStudio && imageExts.contains(ext))) {
+    if (ext == 'pdf') {
       module = 'pdf';
-      state.docs.addPaths([path]);
+      state.pendingPdfs.add(path);
     } else if (imageModule.extensions.contains(ext)) {
       module = 'image';
       state.images.addPaths([path]);
@@ -37,11 +37,6 @@ String? routeFiles(AppState state, List<String> paths, {bool pdfStudio = false})
     }
     target ??= module;
   }
-  if (target == 'pdf') {
-    // Tudo que cai no PDF Estúdio abre na bandeja ("Organizar").
-    if (!state.pdfOpen) state.toolIndex[docsModule.title] = 3;
-    state.pdfOpen = true;
-  }
   state.touch();
   return target;
 }
@@ -54,7 +49,7 @@ class _Category {
 }
 
 const _categories = [
-  _Category('pdf', 'PDF Estúdio', 'Organizar · Comprimir · Dividir · Unir · Senha · Imagens',
+  _Category('pdf', 'FiLume PDF', 'App dedicado: bandeja de páginas · Comprimir · Dividir · Senha',
       Icons.picture_as_pdf_outlined, 'pages'),
   _Category('video', 'Vídeo', 'Comprimir · Dividir · Cortar · Converter', Icons.videocam_outlined, 'video'),
   _Category('audio', 'Áudio', 'Converter · Comprimir · Mixar · Unir', Icons.music_note_outlined, 'audio'),
@@ -72,7 +67,7 @@ class HomePage extends StatelessWidget {
       XTypeGroup(label: 'Vídeos, áudios, PDFs e imagens', extensions: {
         ...videoModule.extensions,
         ...audioModule.extensions,
-        ...docsModule.extensions,
+        'pdf',
         ...imageModule.extensions,
       }.toList()),
       const XTypeGroup(label: 'Todos os arquivos'),
@@ -83,6 +78,8 @@ class HomePage extends StatelessWidget {
   void _route(List<String> paths) {
     final target = routeFiles(state, paths);
     if (target != null) onNavigate(target);
+    // PDFs misturados com outros arquivos: oferece o FiLume PDF também.
+    if (target != 'pdf' && state.pendingPdfs.isNotEmpty) onNavigate('pdf');
   }
 
   @override

@@ -3,6 +3,20 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.2] — 2026-11-12
+
+### Adicionado
+- **FiLume PDF:** o PDF saiu do app principal e virou um aplicativo dedicado (`FiLume PDF.exe`, na mesma pasta). A bandeja de páginas fica sempre à vista, com uma faixa fixa de ferramentas (adicionar, digitalizar, girar, inverter, endireitar, tamanho da página, excluir) e o painel de cada ferramenta à direita: Organizar, Comprimir, Dividir, Imagens e Senha, todas trabalhando sobre o que está na bandeja.
+- **Caixa de salvar:** nome do arquivo, pasta (com atalhos para as pastas guardadas nos Ajustes) e qualidade das imagens, sem abrir o explorador de arquivos toda vez.
+- Atalhos na bandeja: Delete exclui, Ctrl+A seleciona tudo, Esc limpa a seleção.
+
+- **Digitalização própria**, sem programas de terceiros: scanners deste computador pelo Windows (WIA) e scanners de rede por AirScan/eSCL (busca automática ou pelo endereço IP). As páginas entram na bandeja uma a uma, enquanto o scanner trabalha.
+
+### Alterado
+- O motor do NAPS2 saiu do pacote (cerca de 67 MB a menos). TWAIN fica para depois, se fizer falta.
+- Soltar um PDF no FiLume avisa que PDF agora é no app dedicado e oferece abrir; aceitando, o arquivo já entra na bandeja e o FiLume fecha para poupar recursos (se não tiver trabalho em andamento).
+- "Unir" e "Imagens → PDF" deixaram de ser ferramentas separadas: a bandeja já faz as duas coisas.
+
 ## [1.5.0-beta.1] — 2026-11-11
 
 ### Adicionado

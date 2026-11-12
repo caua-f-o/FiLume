@@ -66,8 +66,9 @@ class PdfCompressView extends StatelessWidget {
 }
 
 class PdfSplitView extends StatelessWidget {
-  const PdfSplitView({super.key, required this.state});
+  const PdfSplitView({super.key, required this.state, this.folderNote = true});
   final AppState state;
+  final bool folderNote;
 
   @override
   Widget build(BuildContext context) {
@@ -143,8 +144,10 @@ class PdfSplitView extends StatelessWidget {
                   '(útil para anexos de e-mail e portais com teto de upload).'
               : 'Dividir não recomprime nada: as páginas saem idênticas às do original.',
         ),
-        const SizedBox(height: 8),
-        Text('As partes vão para uma pasta "<nome do arquivo>_partes".', style: _muted(context)),
+        if (folderNote) ...[
+          const SizedBox(height: 8),
+          Text('As partes vão para uma pasta "<nome do arquivo>_partes".', style: _muted(context)),
+        ],
       ],
     );
   }
@@ -171,8 +174,9 @@ class PdfMergeView extends StatelessWidget {
 }
 
 class PdfToImagesView extends StatelessWidget {
-  const PdfToImagesView({super.key, required this.state});
+  const PdfToImagesView({super.key, required this.state, this.folderNote = true});
   final AppState state;
+  final bool folderNote;
 
   @override
   Widget build(BuildContext context) {
@@ -212,8 +216,10 @@ class PdfToImagesView extends StatelessWidget {
             state.touch();
           },
         ),
-        const SizedBox(height: 8),
-        Text('As imagens vão para uma pasta "<nome do arquivo>_imagens".', style: _muted(context)),
+        if (folderNote) ...[
+          const SizedBox(height: 8),
+          Text('As imagens vão para uma pasta "<nome do arquivo>_imagens".', style: _muted(context)),
+        ],
       ],
     );
   }

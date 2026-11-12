@@ -3,22 +3,31 @@ import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'core/launch.dart';
 import 'core/prefs.dart';
 import 'core/state.dart';
 import 'ui/common.dart';
 import 'ui/expressive.dart';
 import 'ui/home_page.dart';
 import 'ui/modules.dart';
-import 'ui/pdf_studio.dart';
+import 'pdf_app/pdf_app.dart';
+import 'ui/pdf_launch.dart';
 import 'ui/settings_page.dart';
 import 'ui/theme.dart';
 import 'ui/preview_player.dart';
 import 'ui/title_bar.dart';
 import 'ui/tool_page.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   await setupWindowChrome();
+  if (isPdfApp(args)) {
+    // FiLume PDF: não carrega o player nem nada de vídeo, áudio ou imagem.
+    final state = AppState(pdfOnly: true);
+    await state.prefs.load();
+    runApp(PdfApp(state: state, files: fileArgs(args)));
+    return;
+  }
   try {
     MediaKit.ensureInitialized();
     playerAvailable = true;
@@ -98,7 +107,7 @@ class _Page {
 
 const _pages = [
   _Page('home', 'Início', Icons.home_outlined, Icons.home),
-  _Page('pdf', 'PDF', Icons.picture_as_pdf_outlined, Icons.picture_as_pdf),
+  _Page('pdf', 'PDF', Icons.open_in_new, Icons.open_in_new),
   _Page('video', 'Vídeo', Icons.videocam_outlined, Icons.videocam),
   _Page('audio', 'Áudio', Icons.music_note_outlined, Icons.music_note),
   _Page('image', 'Imagem', Icons.image_outlined, Icons.image),
@@ -122,15 +131,20 @@ class _ShellState extends State<Shell> {
 
   String _initialPage() {
     final prefs = widget.state.prefs;
-    final wanted = switch (prefs.startPage) {
-      'pdf' => 'pdf',
-      'last' => prefs.lastPage,
-      _ => 'home',
-    };
-    return _pages.any((p) => p.id == wanted) ? wanted : 'home';
+    final wanted = prefs.startPage == 'last' ? prefs.lastPage : 'home';
+    return wanted != 'pdf' && _pages.any((p) => p.id == wanted) ? wanted : 'home';
   }
 
   void _go(String page) {
+    if (page == 'pdf') {
+      // PDF mora no app dedicado: oferece abrir, levando os arquivos soltos aqui.
+      final state = widget.state;
+      final files = List<String>.of(state.pendingPdfs);
+      state.pendingPdfs.clear();
+      final busy = [state.video, state.audio, state.images].any((l) => l.items.isNotEmpty);
+      offerPdfApp(context, state, files, keepOpen: busy);
+      return;
+    }
     if (page == _page) return;
     setState(() => _page = page);
     final prefs = widget.state.prefs;
@@ -183,7 +197,6 @@ class _ShellState extends State<Shell> {
                             module: _page,
                             child: switch (_page) {
                               'home' => HomePage(state: state, onNavigate: _go),
-                              'pdf' => PdfStudio(state: state, onNavigate: _go),
                               'video' => ToolPage(state: state, module: videoModule),
                               'audio' => ToolPage(state: state, module: audioModule),
                               'image' => ToolPage(state: state, module: imageModule),

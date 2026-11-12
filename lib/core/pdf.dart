@@ -480,10 +480,31 @@ Job buildPdfMergeJob(List<MediaInfo> items, String? outDir, PdfTools tools) {
   );
 }
 
+/// Junta as páginas da bandeja em um PDF só. Imagens e digitalizações viram,
+/// cada uma, um PDF de uma página (em [work]); o progresso ocupa 0..[span].
+Future<void> _buildTray(JobCtx ctx, PdfTools tools, List<PageRef> pages, PageFit fit, String out, String work,
+    {double span = 1, int jpegQ = 2}) async {
+  final images = pages.where((r) => r.isImage).length;
+  final parts = <(String, int, int)>[];
+  var done = 0;
+  for (final r in pages) {
+    if (!r.isImage) {
+      parts.add((r.doc.path, r.page, r.rotation));
+      continue;
+    }
+    ctx.report(span * 0.9 * done / images, stage: 'Imagem ${done + 1} de $images');
+    final pdf = p.join(work, 'img_$done.pdf');
+    await writeImagesPdf(ctx, [r.doc], fit, pdf, skew: [r.skew], jpegQ: jpegQ);
+    parts.add((pdf, 1, r.rotation));
+    done++;
+  }
+  ctx.report(span * 0.92, stage: 'Montando páginas');
+  await _assemble(ctx, tools, parts, out);
+}
+
 Job buildPdfOrganizeJob(List<PageRef> pages, String? outDir, PdfTools tools, [PageFit fit = PageFit.a4]) {
   final snapshot = [for (final r in pages) PageRef(r.doc, r.page, r.rotation, r.skew)];
   final first = snapshot.first.doc;
-  final images = snapshot.where((r) => r.isImage).length;
   return Job(
     title: '${p.basenameWithoutExtension(first.path)}_organizado.pdf',
     kind: 'Organizar',
@@ -492,22 +513,7 @@ Job buildPdfOrganizeJob(List<PageRef> pages, String? outDir, PdfTools tools, [Pa
       final out = await _outFile(outDir, first, '_organizado');
       final work = await Directory.systemTemp.createTemp('filume_mesa_');
       try {
-        // Imagens e digitalizações viram, cada uma, um PDF de uma página.
-        final parts = <(String, int, int)>[];
-        var done = 0;
-        for (final r in snapshot) {
-          if (!r.isImage) {
-            parts.add((r.doc.path, r.page, r.rotation));
-            continue;
-          }
-          ctx.report(0.9 * done / images, stage: 'Imagem ${done + 1} de $images');
-          final pdf = p.join(work.path, 'img_$done.pdf');
-          await writeImagesPdf(ctx, [r.doc], fit, pdf, skew: [r.skew]);
-          parts.add((pdf, 1, r.rotation));
-          done++;
-        }
-        ctx.report(0.92, stage: 'Montando páginas');
-        await _assemble(ctx, tools, parts, out);
+        await _buildTray(ctx, tools, snapshot, fit, out, work.path);
       } catch (_) {
         _delete(out);
         rethrow;
@@ -517,6 +523,129 @@ Job buildPdfOrganizeJob(List<PageRef> pages, String? outDir, PdfTools tools, [Pa
         } catch (_) {}
       }
       return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out);
+    },
+  );
+}
+
+// ------------------------------------------------- bandeja (FiLume PDF)
+
+/// O que fazer com as páginas da bandeja ao salvar.
+enum TrayOp {
+  save('Salvar PDF', 'Salvar'),
+  compress('Comprimir e salvar', 'Comprimir'),
+  split('Dividir e salvar', 'Dividir'),
+  images('Exportar imagens', 'Exportar'),
+  protect('Proteger e salvar', 'Proteger');
+
+  const TrayOp(this.label, this.kind);
+  final String label;
+  final String kind;
+
+  /// Dividir e exportar geram uma pasta; o resto, um arquivo PDF.
+  bool get folder => this == split || this == images;
+}
+
+/// Leva [src] (arquivo ou pasta) para [dst], sem sobrescrever nada.
+Future<String> _moveOut(String src, String dst) async {
+  final isDir = FileSystemEntity.isDirectorySync(src);
+  final target = uniquePath(dst, directory: isDir);
+  await Directory(p.dirname(target)).create(recursive: true);
+  try {
+    isDir ? await Directory(src).rename(target) : await File(src).rename(target);
+  } on FileSystemException {
+    // Outro disco: copia e apaga a origem.
+    if (isDir) {
+      await Directory(target).create(recursive: true);
+      await for (final e in Directory(src).list()) {
+        if (e is File) await e.copy(p.join(target, p.basename(e.path)));
+      }
+    } else {
+      await File(src).copy(target);
+    }
+  }
+  return target;
+}
+
+/// A bandeja é exatamente um PDF inteiro, na ordem e sem giros?
+MediaInfo? _untouchedDoc(List<PageRef> pages) {
+  final doc = pages.first.doc;
+  if (doc.isImage || pages.length != doc.pages) return null;
+  for (var i = 0; i < pages.length; i++) {
+    final r = pages[i];
+    if (!identical(r.doc, doc) || r.page != i + 1 || r.rotation % 360 != 0) return null;
+  }
+  return doc;
+}
+
+/// Trabalho do FiLume PDF: monta as páginas da bandeja e aplica [op].
+/// O resultado vai para [outDir] com o nome [name] (sem extensão).
+Job buildTrayJob({
+  required List<PageRef> pages,
+  required TrayOp op,
+  required String outDir,
+  required String name,
+  required PdfTools tools,
+  PageFit fit = PageFit.a4,
+  int jpegQ = 2,
+  PdfCompressSettings? compress,
+  PdfSplitSettings? split,
+  PdfConvertSettings? convert,
+  String password = '',
+}) {
+  final snapshot = [for (final r in pages) PageRef(r.doc, r.page, r.rotation, r.skew)];
+  final cs = compress?.copy(), ss = split?.copy(), vs = convert?.copy();
+  return Job(
+    title: op.folder ? name : '$name.pdf',
+    kind: op.kind,
+    detail: '${snapshot.length} ${snapshot.length == 1 ? 'página' : 'páginas'}',
+    body: (ctx) async {
+      if (snapshot.isEmpty) throw FfError('A bandeja está vazia.');
+      if (op == TrayOp.protect && password.isEmpty) throw FfError('Digite a senha.');
+      final work = await Directory.systemTemp.createTemp('filume_bandeja_');
+      try {
+        final target = p.join(outDir, op.folder ? name : '$name.pdf');
+        if (op == TrayOp.save) {
+          final tmp = p.join(work.path, 'saida.pdf');
+          await _buildTray(ctx, tools, snapshot, fit, tmp, work.path, jpegQ: jpegQ);
+          final out = await _moveOut(tmp, target);
+          return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out);
+        }
+        // Um PDF intocado dispensa a montagem (comprimir e proteger usam o original).
+        final single = op.folder ? null : _untouchedDoc(snapshot);
+        final MediaInfo info;
+        var from = 0.0;
+        if (single != null) {
+          info = single;
+        } else {
+          final src = Directory(p.join(work.path, 'origem'))..createSync();
+          final tmp = p.join(src.path, '$name.pdf');
+          await _buildTray(ctx, tools, snapshot, fit, tmp, work.path, span: 0.3, jpegQ: jpegQ);
+          info = await tools.probe(tmp);
+          from = 0.3;
+        }
+        final outTmp = Directory(p.join(work.path, 'saida'))..createSync();
+        final inner = switch (op) {
+          TrayOp.compress => buildPdfCompressJob(info, cs ?? PdfCompressSettings(), outTmp.path, tools),
+          TrayOp.split => buildPdfSplitJob(info, ss ?? PdfSplitSettings(), outTmp.path, tools),
+          TrayOp.images => buildPdfToImagesJob(info, vs ?? PdfConvertSettings(), outTmp.path, tools),
+          _ => buildPdfPasswordJob(
+              info,
+              PdfPasswordSettings()
+                ..protect = true
+                ..password = password,
+              outTmp.path,
+              tools),
+        };
+        final sub = JobCtx(ctx.tools, ctx.run,
+            (pr, stage, speed) => ctx.report(from + (1 - from) * pr, stage: stage, speed: speed));
+        final r = await inner.body(sub);
+        final out = await _moveOut(r.revealPath, target);
+        return JobResult(r.summary, out, warning: r.warning);
+      } finally {
+        try {
+          work.deleteSync(recursive: true);
+        } catch (_) {}
+      }
     },
   );
 }
@@ -617,6 +746,7 @@ Future<void> writeImagesPdf(
   String out, {
   List<double> skew = const [],
   void Function(int index)? onImage,
+  int jpegQ = 2,
 }) async {
   final work = await Directory.systemTemp.createTemp('filume_pdf_');
   RandomAccessFile? raf;
@@ -658,7 +788,7 @@ Future<void> writeImagesPdf(
                 'color=white:s=16x16,format=rgb24[c];[c][0:v]scale2ref[c][i];[c][i]overlay=shortest=1'
                     '${rotate == null ? '' : ',$rotate'}',
               ] else if (rotate != null) ...['-vf', rotate],
-              '-frames:v', '1', '-q:v', '2', '-pix_fmt', 'yuvj420p', jpg,
+              '-frames:v', '1', '-q:v', '$jpegQ', '-pix_fmt', 'yuvj420p', jpg,
             ]);
         if (alpha) {
           try {

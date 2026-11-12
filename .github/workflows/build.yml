@@ -82,14 +82,16 @@ jobs:
           $up = 'build/windows/x64/runner/Release/upscaler'
           if (Test-Path $up) { $env:FILUME_UPSCALER_DIR = (Resolve-Path $up).Path }
           dart run tool/image_test.dart smoke/img
-          $scan = 'build/windows/x64/runner/Release/scanner/NAPS2.Console.exe'
-          if (Test-Path $scan) { "Scanners TWAIN vistos pelo motor:"; & $scan --listdevices --driver twain; "codigo: $LASTEXITCODE" } else { "motor de digitalizacao ausente" }
+          dart run tool/scan_test.dart
 
       - name: Empacotar
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/FiLume | Out-Null
           Copy-Item build/windows/x64/runner/Release/* dist/FiLume -Recurse
+          # FiLume PDF é o mesmo executável com outro nome; garante que ele está no pacote.
+          if (-not (Test-Path 'dist/FiLume/FiLume PDF.exe')) { Copy-Item dist/FiLume/FiLume.exe 'dist/FiLume/FiLume PDF.exe' }
+          Get-ChildItem dist/FiLume -Filter *.exe | ForEach-Object { "$($_.Name) $([math]::Round($_.Length/1KB)) KB" }
           Copy-Item LICENSE, THIRD_PARTY_NOTICES.md dist/FiLume
           Compress-Archive -Path dist/FiLume -DestinationPath FiLume-windows-x64.zip
 

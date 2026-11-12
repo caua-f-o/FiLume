@@ -55,17 +55,19 @@ Quer testar novidades antes? As **betas** ficam nas [releases](https://github.co
 | **Dividir** | Por tamanho, duração ou número de partes, sem recodificar. |
 | **Unir** | Junta na ordem da lista. |
 
-### 📄 PDF Estúdio
+### 📄 FiLume PDF
+
+Aplicativo dedicado (`FiLume PDF.exe`, na mesma pasta do FiLume). Tudo gira em torno da **bandeja de páginas**, no estilo do NAPS2: solte PDFs e imagens ou digitalize (scanner USB pelo Windows/WIA, ou de rede por AirScan/eSCL), arraste para reordenar, gire, inverta, endireite e veja de perto. Cada ferramenta trabalha sobre o que está na bandeja:
 
 | Ferramenta | O que faz |
 | --- | --- |
+| **Organizar** | Salva a bandeja como um PDF só (é também como se une PDFs e se transforma imagens em PDF). |
 | **Comprimir** | Quatro níveis, com opção de tons de cinza. PDFs escaneados chegam a encolher mais de 90%. |
 | **Dividir** | A cada N páginas, por tamanho máximo (anexos de e-mail), por intervalos ou página a página. |
-| **Unir** | Vários PDFs em um só. |
-| **Organizar** | Bandeja de páginas no estilo do NAPS2: mistura PDFs, imagens e digitalizações (scanner TWAIN/WIA); miniaturas com zoom ou lista simples; girar, inverter, endireitar e ver de perto. |
-| **PDF → Imagens** | JPG ou PNG em 72, 150 ou 300 dpi. |
-| **Imagens → PDF** | Cada imagem vira uma página, em A4 ou no tamanho original. |
+| **Imagens** | Exporta cada página como JPG ou PNG em 72, 150 ou 300 dpi. |
 | **Senha** | Protege com AES-256 ou remove a senha (sabendo a atual). |
+
+Ao salvar, uma caixa pede o nome e a pasta, com atalhos para as pastas guardadas nos Ajustes.
 
 ### 🖼️ Imagem
 

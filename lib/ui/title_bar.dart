@@ -20,7 +20,8 @@ Future<void> setupWindowChrome() async {
 
 /// Faixa transparente no topo: arrastar move a janela, duplo clique maximiza.
 class TitleBarOverlay extends StatefulWidget {
-  const TitleBarOverlay({super.key});
+  const TitleBarOverlay({super.key, this.title = 'FiLume'});
+  final String title;
 
   @override
   State<TitleBarOverlay> createState() => _TitleBarOverlayState();
@@ -84,7 +85,7 @@ class _TitleBarOverlayState extends State<TitleBarOverlay> with WindowListener {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'FiLume',
+                      widget.title,
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ],

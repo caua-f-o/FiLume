@@ -48,6 +48,10 @@ class Prefs extends ChangeNotifier {
   bool keepRecents = true;
   final List<Recent> recents = [];
 
+  /// FiLume PDF: pastas favoritas para salvar e a última usada.
+  final List<String> pdfFolders = [];
+  String? pdfLastDir;
+
   /// Cor de destaque do Windows (0xAARRGGBB), se foi possível ler.
   int? systemAccent;
 
@@ -73,11 +77,19 @@ class Prefs extends ChangeNotifier {
           theme = pick('theme', const ['system', 'light', 'dark'], theme);
           colorMode = pick('colorMode', const ['tool', 'static', 'system', 'material'], colorMode);
           palette = pick('palette', const ['violeta', 'azul', 'agua', 'rosa', 'laranja'], palette);
-          startPage = pick('startPage', const ['home', 'last', 'pdf'], startPage);
+          startPage = pick('startPage', const ['home', 'last'], startPage);
           final lp = j['lastPage'];
           if (lp is String) lastPage = lp;
           final kr = j['keepRecents'];
           if (kr is bool) keepRecents = kr;
+          final pf = j['pdfFolders'];
+          if (pf is List) {
+            pdfFolders
+              ..clear()
+              ..addAll(pf.whereType<String>());
+          }
+          final pl = j['pdfLastDir'];
+          if (pl is String) pdfLastDir = pl;
           final rs = j['recents'];
           if (rs is List) {
             recents
@@ -105,6 +117,8 @@ class Prefs extends ChangeNotifier {
         'startPage': startPage,
         'lastPage': lastPage,
         'keepRecents': keepRecents,
+        'pdfFolders': pdfFolders,
+        if (pdfLastDir != null) 'pdfLastDir': pdfLastDir,
         'recents': [for (final r in recents) r.toJson()],
       }));
     } catch (_) {}

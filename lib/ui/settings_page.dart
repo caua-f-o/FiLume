@@ -5,8 +5,14 @@ import 'home_widgets.dart';
 import 'theme.dart';
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.prefs});
+  const SettingsPage({super.key, required this.prefs, this.extra, this.mainApp = true});
   final Prefs prefs;
+
+  /// Seção a mais, mostrada antes das outras (pastas do FiLume PDF).
+  final Widget? extra;
+
+  /// Falso no FiLume PDF: esconde o que só vale para o app principal.
+  final bool mainApp;
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +33,7 @@ class SettingsPage extends StatelessWidget {
             Text('As mudanças valem na hora e ficam guardadas neste computador.',
                 style: t.textTheme.bodyLarge?.copyWith(color: cs.onSurfaceVariant)),
             const SizedBox(height: 24),
+            if (extra != null) ...[extra!, const SizedBox(height: 16)],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -107,6 +114,7 @@ class SettingsPage extends StatelessWidget {
                           ],
                         ),
                       ),
+                      if (mainApp) ...[
                       const SizedBox(height: 16),
                       _Section(
                         title: 'Ao abrir o FiLume',
@@ -117,7 +125,6 @@ class SettingsPage extends StatelessWidget {
                             segments: const [
                               ButtonSegment(value: 'home', label: Text('Tela inicial')),
                               ButtonSegment(value: 'last', label: Text('Última ferramenta')),
-                              ButtonSegment(value: 'pdf', label: Text('PDF Estúdio')),
                             ],
                             selected: {prefs.startPage},
                             onSelectionChanged: (s) => prefs.update(() => prefs.startPage = s.first),
@@ -139,6 +146,7 @@ class SettingsPage extends StatelessWidget {
                           style: t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontSize: 13),
                         ),
                       ),
+                      ],
                     ],
                   ),
                 ),

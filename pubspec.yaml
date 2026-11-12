@@ -1,7 +1,7 @@
 name: filume
 description: "FiLume - compressor e divisor de vídeos rápido e leve."
 publish_to: "none"
-version: 1.5.0-beta.1+7
+version: 1.5.0-beta.2+8
 
 environment:
   sdk: ^3.8.0

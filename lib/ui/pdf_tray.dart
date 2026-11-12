@@ -137,8 +137,14 @@ class PdfOrganizeView extends StatelessWidget {
 /// Bandeja de páginas (ocupa o lugar da lista de arquivos): miniaturas com
 /// zoom ou a lista simples, e o botão de digitalizar.
 class OrganizerWorkspace extends StatelessWidget {
-  const OrganizerWorkspace({super.key, required this.state});
+  const OrganizerWorkspace({super.key, required this.state, this.showScan = true});
   final AppState state;
+
+  /// No FiLume PDF o botão de digitalizar fica na faixa de ferramentas.
+  final bool showScan;
+
+  /// Abre a digitalização e põe as páginas na bandeja.
+  static Future<void> scan(BuildContext context, AppState state) => OrganizerWorkspace(state: state)._scan(context);
 
   static const minZoom = 96.0, maxZoom = 340.0;
 
@@ -147,28 +153,16 @@ class OrganizerWorkspace extends StatelessWidget {
     state.touch();
   }
 
-  Future<void> _scan(BuildContext context) async {
-    final scanner = state.scanner;
-    if (scanner == null) {
-      await showDialog<void>(
+  Future<void> _scan(BuildContext context) => showDialog<void>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Digitalizar'),
-          content: Text(Platform.isWindows
-              ? 'O motor de digitalização não foi encontrado (pasta "scanner" ao lado do FiLume.exe).'
-              : 'A digitalização por TWAIN só existe no Windows.'),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar'))],
+        barrierDismissible: false,
+        // Cada página entra na bandeja assim que o scanner entrega.
+        builder: (context) => _ScanDialog(
+          scanner: state.scanner,
+          settings: state.scan,
+          onPage: (path) => state.docs.addPaths([path]),
         ),
       );
-      return;
-    }
-    final pages = await showDialog<List<String>>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _ScanDialog(scanner: scanner, settings: state.scan),
-    );
-    if (pages != null && pages.isNotEmpty) state.docs.addPaths(pages);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,12 +250,14 @@ class OrganizerWorkspace extends StatelessWidget {
                 ),
               ] else
                 const Spacer(),
-              const SizedBox(width: 8),
-              FilledButton.tonalIcon(
-                onPressed: () => _scan(context),
-                icon: Icon(Icons.scanner_outlined, size: 18, color: cs.onSecondaryContainer),
-                label: const Text('Digitalizar'),
-              ),
+              if (showScan) ...[
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () => _scan(context),
+                  icon: Icon(Icons.scanner_outlined, size: 18, color: cs.onSecondaryContainer),
+                  label: const Text('Digitalizar'),
+                ),
+              ],
             ],
           ),
         ),
@@ -672,27 +668,42 @@ class _PageViewerState extends State<_PageViewer> {
 // ---------------------------------------------------------------- digitalizar
 
 class _ScanDialog extends StatefulWidget {
-  const _ScanDialog({required this.scanner, required this.settings});
-  final ScanTools scanner;
+  const _ScanDialog({required this.scanner, required this.settings, required this.onPage});
+  final Scanner scanner;
   final ScanSettings settings;
+  final void Function(String path) onPage;
 
   @override
   State<_ScanDialog> createState() => _ScanDialogState();
 }
 
 class _ScanDialogState extends State<_ScanDialog> {
-  List<String>? _devices;
+  final _host = TextEditingController();
+  List<ScanDevice>? _devices;
   String? _error, _details;
-  bool _scanning = false;
-  Process? _proc;
-  int _load = 0;
+  bool _scanning = false, _probing = false;
+  ScanCancel? _cancelToken;
+  int _load = 0, _pages = 0;
 
   ScanSettings get s => widget.settings;
 
   @override
   void initState() {
     super.initState();
+    // Fora do Windows só existe o scanner de rede.
+    if (!Platform.isWindows) s.driver = 'escl';
     _loadDevices();
+  }
+
+  @override
+  void dispose() {
+    _host.dispose();
+    super.dispose();
+  }
+
+  void _setDevices(List<ScanDevice> list) {
+    _devices = list;
+    if (!list.any((d) => d.id == s.device)) s.device = list.isEmpty ? '' : list.first.id;
   }
 
   Future<void> _loadDevices() async {
@@ -704,10 +715,7 @@ class _ScanDialogState extends State<_ScanDialog> {
     try {
       final list = await widget.scanner.devices(s.driver);
       if (!mounted || ticket != _load) return;
-      setState(() {
-        _devices = list;
-        if (!list.contains(s.device)) s.device = list.isEmpty ? '' : list.first;
-      });
+      setState(() => _setDevices(list));
     } catch (e) {
       if (!mounted || ticket != _load) return;
       setState(() {
@@ -718,14 +726,42 @@ class _ScanDialogState extends State<_ScanDialog> {
     }
   }
 
-  Future<void> _scan() async {
+  /// Scanner de rede pelo endereço digitado.
+  Future<void> _connect() async {
     setState(() {
-      _scanning = true;
+      _probing = true;
       _error = _details = null;
     });
     try {
-      final pages = await widget.scanner.scan(s, onStart: (proc) => _proc = proc);
-      if (mounted) Navigator.pop(context, pages);
+      final d = await widget.scanner.esclAt(_host.text);
+      if (!mounted) return;
+      setState(() {
+        _setDevices(widget.scanner.knownEscl);
+        s.device = d.id;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e is ScanError ? e.message : 'Não foi possível conectar.';
+        _details = e is ScanError ? e.details : '$e';
+      });
+    }
+    if (mounted) setState(() => _probing = false);
+  }
+
+  Future<void> _scan() async {
+    final token = _cancelToken = ScanCancel();
+    setState(() {
+      _scanning = true;
+      _pages = 0;
+      _error = _details = null;
+    });
+    try {
+      await widget.scanner.scan(s, cancel: token, onPage: (path) {
+        widget.onPage(path);
+        if (mounted) setState(() => _pages++);
+      });
+      if (mounted && !token.canceled) Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -733,13 +769,11 @@ class _ScanDialogState extends State<_ScanDialog> {
         _error = e is ScanError ? e.message : 'A digitalização não funcionou.';
         _details = e is ScanError ? e.details : '$e';
       });
-    } finally {
-      _proc = null;
     }
   }
 
-  void _cancel() {
-    _proc?.kill();
+  void _close() {
+    _cancelToken?.cancel();
     Navigator.pop(context);
   }
 
@@ -748,6 +782,7 @@ class _ScanDialogState extends State<_ScanDialog> {
     final t = Theme.of(context);
     final cs = t.colorScheme;
     final devices = _devices;
+    final net = s.driver == 'escl';
     Widget label(String text) => Padding(
           padding: const EdgeInsets.only(top: 16, bottom: 8),
           child: Text(text, style: t.textTheme.labelLarge?.copyWith(color: cs.onSurfaceVariant)),
@@ -770,32 +805,68 @@ class _ScanDialogState extends State<_ScanDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              label('Driver'),
-              seg({'twain': 'TWAIN', 'wia': 'WIA'}, s.driver, (v) {
+              label('Onde está o scanner'),
+              seg({if (Platform.isWindows) 'wia': 'Neste computador (USB)', 'escl': 'Na rede (Wi-Fi ou cabo)'}, s.driver, (v) {
                 s.driver = v;
                 _loadDevices();
               }),
               label('Scanner'),
               if (devices == null)
-                const Row(children: [
-                  SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5)),
-                  SizedBox(width: 12),
-                  Text('Procurando scanners…'),
+                Row(children: [
+                  const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                  const SizedBox(width: 12),
+                  Text(net ? 'Procurando scanners na rede…' : 'Procurando scanners…'),
                 ])
               else if (devices.isEmpty)
                 Text(
-                  _error ?? 'Nenhum scanner encontrado por este driver. Confira se ele está ligado e instalado, '
-                      'ou tente o outro driver.',
+                  _error ??
+                      (net
+                          ? 'Nenhum scanner apareceu na rede. Se ele estiver ligado e na mesma rede, digite o endereço dele abaixo.'
+                          : 'Nenhum scanner encontrado neste computador. Confira se ele está ligado e com o driver '
+                              'instalado, ou tente "Na rede" se for uma multifuncional com Wi-Fi.'),
                   style: TextStyle(color: cs.error),
                 )
               else
                 Choice<String>(
-                  key: ValueKey('${s.driver}-${devices.length}'),
+                  key: ValueKey('${s.driver}-${devices.length}-${s.device}'),
                   label: 'Aparelho',
                   value: s.device,
-                  options: {for (final d in devices) d: d},
+                  options: {for (final d in devices) d.id: d.name},
                   onChanged: (v) => setState(() => s.device = v),
                 ),
+              if (devices != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (net)
+                      Expanded(
+                        child: TextField(
+                          controller: _host,
+                          enabled: !_scanning && !_probing,
+                          onSubmitted: (_) => _connect(),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            labelText: 'Endereço do scanner (IP)',
+                            hintText: 'Ex.: 192.168.0.25',
+                          ),
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    const SizedBox(width: 8),
+                    if (net)
+                      FilledButton.tonal(
+                        onPressed: _scanning || _probing ? null : _connect,
+                        child: Text(_probing ? 'Conectando…' : 'Conectar'),
+                      ),
+                    IconButton(
+                      tooltip: 'Procurar de novo',
+                      onPressed: _scanning ? null : _loadDevices,
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+              ],
               label('Origem do papel'),
               seg({'glass': 'Vidro', 'feeder': 'Alimentador', 'duplex': 'Frente e verso'}, s.source, (v) => s.source = v),
               label('Resolução'),
@@ -806,7 +877,12 @@ class _ScanDialogState extends State<_ScanDialog> {
                 const SizedBox(height: 20),
                 const LinearProgressIndicator(),
                 const SizedBox(height: 8),
-                Text('Digitalizando… as páginas entram na bandeja quando terminar.', style: _muted(context)),
+                Text(
+                  _pages == 0
+                      ? 'Digitalizando… cada página entra na bandeja assim que fica pronta.'
+                      : '$_pages ${_pages == 1 ? 'página já está' : 'páginas já estão'} na bandeja…',
+                  style: _muted(context),
+                ),
               ],
               if (_error != null && (devices?.isNotEmpty ?? false)) ...[
                 const SizedBox(height: 16),
@@ -821,7 +897,7 @@ class _ScanDialogState extends State<_ScanDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _cancel, child: const Text('Cancelar')),
+        TextButton(onPressed: _close, child: Text(_scanning ? 'Parar' : 'Fechar')),
         FilledButton(
           onPressed: _scanning || devices == null || devices.isEmpty || s.device.isEmpty ? null : _scan,
           child: const Text('Digitalizar'),

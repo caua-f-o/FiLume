@@ -8,13 +8,10 @@ import '../core/ffmpeg.dart';
 import '../core/format.dart';
 import '../core/merge.dart';
 import '../core/mux.dart';
-import '../core/pdf.dart';
 import '../core/split.dart';
 import '../core/state.dart' show imageExts;
 import '../core/trim.dart';
 import 'audio_panels.dart';
-import 'pdf_panels.dart';
-import 'pdf_tray.dart';
 import 'settings_panels.dart';
 import 'tool_page.dart';
 import 'tool_panels.dart';
@@ -181,108 +178,6 @@ bool _pdf(MediaInfo i) => i.isPdf && !i.encrypted;
 
 /// O que entra na bandeja do organizador: PDFs abertos e imagens.
 bool mesaAccepts(MediaInfo i) => i.isImage || _pdf(i);
-
-final docsModule = ModuleDef(
-  id: 'pdf',
-  title: 'PDF',
-  one: 'arquivo',
-  many: 'arquivos',
-  typeLabel: 'PDFs e imagens',
-  docs: true,
-  extensions: const ['pdf', ...imageExts],
-  inputs: (s) => s.docs,
-  missing: (s) {
-    if (s.pdf == null) {
-      return 'Ferramentas de PDF não encontradas. A pasta "pdftools" deveria estar ao lado do FiLume.exe.';
-    }
-    if (s.pdf!.gs == null) {
-      return 'Ghostscript não encontrado: comprimir, miniaturas e PDF → imagens ficam indisponíveis.';
-    }
-    return null;
-  },
-  tools: [
-    ToolDef(
-      label: 'Comprimir',
-      icon: Icons.compress,
-      needs: 'PDFs',
-      accepts: _pdf,
-      panel: (s) => PdfCompressView(state: s),
-      jobs: (s, ready) =>
-          [for (final i in ready) buildPdfCompressJob(i, s.pdfCompress, s.outputDir, s.pdf!)],
-    ),
-    ToolDef(
-      label: 'Dividir',
-      icon: Icons.call_split,
-      needs: 'PDFs',
-      accepts: _pdf,
-      panel: (s) => PdfSplitView(state: s),
-      jobs: (s, ready) => [for (final i in ready) buildPdfSplitJob(i, s.pdfSplit, s.outputDir, s.pdf!)],
-      hint: (s, info) {
-        final n = s.pdfSplit.estimateParts(info);
-        if (n == null) return 'intervalos inválidos';
-        if (n <= 1) return 'não precisa dividir';
-        return '${s.pdfSplit.mode == PdfSplitMode.size ? '≈ ' : ''}$n partes';
-      },
-    ),
-    ToolDef(
-      label: 'Unir',
-      icon: Icons.merge,
-      needs: 'PDFs',
-      accepts: _pdf,
-      ordered: true,
-      panel: (s) => PdfMergeView(state: s),
-      jobs: (s, ready) => [buildPdfMergeJob(ready, s.outputDir, s.pdf!)],
-      blocked: (s, ready) => ready.length < 2 ? 'Adicione pelo menos 2 PDFs' : null,
-      actionLabel: (s, ready) => 'Unir ${ready.length} PDFs',
-    ),
-    ToolDef(
-      label: 'Organizar',
-      icon: Icons.dashboard_customize_outlined,
-      needs: 'PDFs ou imagens',
-      accepts: mesaAccepts,
-      panel: (s) => PdfOrganizeView(state: s),
-      workspace: (s) => OrganizerWorkspace(state: s),
-      jobs: (s, ready) => [buildPdfOrganizeJob(s.organizer.pages, s.outputDir, s.pdf!, s.pdfConvert.fit)],
-      blocked: (s, ready) {
-        s.organizer.sync(ready);
-        return s.organizer.pages.isEmpty ? 'Nenhuma página na bandeja' : null;
-      },
-      actionLabel: (s, ready) => 'Salvar PDF com ${s.organizer.pages.length} páginas',
-    ),
-    ToolDef(
-      label: 'PDF → Imagens',
-      icon: Icons.image_outlined,
-      needs: 'PDFs',
-      accepts: _pdf,
-      panel: (s) => PdfToImagesView(state: s),
-      jobs: (s, ready) =>
-          [for (final i in ready) buildPdfToImagesJob(i, s.pdfConvert, s.outputDir, s.pdf!)],
-      hint: (s, info) => '→ ${info.pages} ${info.pages == 1 ? 'imagem' : 'imagens'}',
-    ),
-    ToolDef(
-      label: 'Imagens → PDF',
-      icon: Icons.picture_as_pdf_outlined,
-      needs: 'imagens',
-      accepts: (i) => i.isImage,
-      ordered: true,
-      panel: (s) => ImagesToPdfView(state: s),
-      jobs: (s, ready) => [buildImagesToPdfJob(ready, s.pdfConvert, s.outputDir)],
-      actionLabel: (s, ready) =>
-          'Criar PDF com ${ready.length} ${ready.length == 1 ? 'imagem' : 'imagens'}',
-    ),
-    ToolDef(
-      label: 'Senha',
-      icon: Icons.lock_outline,
-      needs: 'PDFs',
-      accepts: (i) => i.isPdf,
-      panel: (s) => PdfPasswordView(state: s),
-      jobs: (s, ready) =>
-          [for (final i in ready) buildPdfPasswordJob(i, s.pdfPassword, s.outputDir, s.pdf!)],
-      blocked: (s, ready) => s.pdfPassword.password.isEmpty ? 'Digite a senha' : null,
-      hint: (s, info) => info.encrypted ? 'tem senha' : null,
-    ),
-  ],
-);
 
 // --------------------------------------------------------------------- imagem
 

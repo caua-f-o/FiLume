@@ -285,6 +285,10 @@ class JobQueue extends ChangeNotifier {
 }
 
 class AppState extends ChangeNotifier {
+  AppState({this.pdfOnly = false});
+
+  /// Verdadeiro no FiLume PDF: só as ferramentas de PDF são carregadas.
+  final bool pdfOnly;
   FfTools? tools;
   bool toolsLoading = true;
   EncoderCaps caps = const EncoderCaps({});
@@ -316,7 +320,7 @@ class AppState extends ChangeNotifier {
 
   /// Largura das miniaturas da bandeja (o controle de zoom).
   double trayZoom = 148;
-  ScanTools? scanner;
+  final Scanner scanner = Scanner();
   final ScanSettings scan = ScanSettings();
   late final PdfThumbs thumbs = PdfThumbs(touch);
   String? outputDir;
@@ -335,8 +339,8 @@ class AppState extends ChangeNotifier {
   final AudioMergeSettings audioMerge = AudioMergeSettings();
   final MixSettings mix = MixSettings();
 
-  /// No PDF Estúdio: true = ferramenta aberta; false = tela de entrada.
-  bool pdfOpen = false;
+  /// PDFs soltos no app principal, à espera de irem para o FiLume PDF.
+  final List<String> pendingPdfs = [];
 
   /// Ferramenta aberta em cada módulo (lembrada ao trocar de módulo).
   final Map<String, int> toolIndex = {};
@@ -363,8 +367,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     tools = await FfTools.locate();
     pdf = await PdfTools.locate();
-    upscaler = UpscalerTools.locate();
-    scanner = ScanTools.locate();
+    if (!pdfOnly) upscaler = UpscalerTools.locate();
     queue.tools = tools;
     toolsLoading = false;
     notifyListeners();
@@ -373,6 +376,7 @@ class AppState extends ChangeNotifier {
     video.probePending();
     audio.probePending();
     docs.probePending();
+    if (pdfOnly) return;
     images.probePending();
     caps = EncoderCaps(await t.detectEncoders());
     if (!caps.supports(compress.codec)) {

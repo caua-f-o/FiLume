@@ -173,49 +173,16 @@ endif()
   }
 }
 
-/// Embute o motor de digitalização (linha de comando do NAPS2, que fala com
-/// drivers TWAIN e WIA).
-void bundleScanner() {
-  if (!Platform.isWindows && Platform.environment['FILUME_FORCE_BUNDLE'] == null) return;
-  final root = Directory('third_party/scanner');
-  final tmp = Directory('third_party/_dl_scan');
-  try {
-    if (!File('${root.path}/NAPS2.Console.exe').existsSync()) {
-      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
-      tmp.createSync(recursive: true);
-      if (sh('gh', ['release', 'download', '-R', 'cyanfish/naps2', '-p', 'naps2-*-win-x64.zip', '-D', tmp.path]) ||
-          sh('curl', ['-fsSL', '-o', '${tmp.path}/naps2-8.2.1-win-x64.zip',
-            'https://github.com/cyanfish/naps2/releases/download/v8.2.1/naps2-8.2.1-win-x64.zip'])) {
-        final zip = tmp.listSync().whereType<File>().firstWhere((f) => f.path.endsWith('.zip'));
-        Directory('${tmp.path}/x').createSync();
-        if (sh('7z', ['x', '-y', '-o${tmp.path}/x', zip.path]) || sh('tar', ['-xf', zip.path, '-C', '${tmp.path}/x'])) {
-          final exe = Directory('${tmp.path}/x')
-              .listSync(recursive: true)
-              .whereType<File>()
-              .firstWhere((f) => f.path.replaceAll('\\', '/').endsWith('/NAPS2.Console.exe'));
-          // A pasta inteira do programa: o console depende das bibliotecas ao lado dele.
-          copyDir(exe.parent, root);
-          stdout.writeln('Motor de digitalização embutido.');
-        }
-      }
-    }
-  } catch (e) {
-    stderr.writeln('aviso: motor de digitalização não embutido: $e');
-  } finally {
-    try {
-      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
-    } catch (_) {}
-  }
-
+/// FiLume PDF: o mesmo executável com outro nome (o app decide o que abrir
+/// pelo nome do arquivo). Uma cópia vai para a pasta do build.
+void bundlePdfApp() {
   final cmake = File('windows/CMakeLists.txt');
-  if (cmake.existsSync() && !cmake.readAsStringSync().contains('third_party/scanner')) {
+  if (cmake.existsSync() && !cmake.readAsStringSync().contains('FiLume PDF.exe')) {
     cmake.writeAsStringSync('''
 
-# FiLume: motor de digitalização (NAPS2) ao lado do executável.
-if(EXISTS "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/scanner")
-  install(DIRECTORY "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/scanner"
-    DESTINATION "\${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
-endif()
+# FiLume PDF: cópia do executável com o nome do app de PDF.
+install(PROGRAMS "\$<TARGET_FILE:\${BINARY_NAME}>"
+  DESTINATION "\${CMAKE_INSTALL_PREFIX}" RENAME "FiLume PDF.exe" COMPONENT Runtime)
 ''', mode: FileMode.append);
   }
 }
@@ -257,6 +224,6 @@ void main() {
   }
   bundlePdfTools();
   bundleUpscaler();
-  bundleScanner();
+  bundlePdfApp();
   stdout.writeln('Runner do Windows personalizado.');
 }
