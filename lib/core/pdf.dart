@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'ffmpeg.dart';
 import 'format.dart';
 import 'job.dart';
+import 'ocr.dart';
 
 /// Motores de PDF: qpdf (estrutura: dividir, unir, organizar, senha) e
 /// Ghostscript (comprimir e desenhar páginas).
@@ -529,6 +531,56 @@ Job buildPdfOrganizeJob(List<PageRef> pages, String? outDir, PdfTools tools, [Pa
 
 // ------------------------------------------------- bandeja (FiLume PDF)
 
+/// Resolução em que as páginas são desenhadas para o OCR ler.
+const _ocrDpi = 200;
+
+/// OCR: acrescenta uma camada de texto invisível às páginas de [pdf] que
+/// ainda não têm texto (digitalizações, fotos). Devolve quantas ganharam
+/// texto; o progresso ocupa [from]..[to].
+Future<int> _ocrLayer(JobCtx ctx, PdfTools tools, String pdf, String work, OcrFn ocr, double from, double to) async {
+  final dir = Directory(p.join(work, 'ocr'))..createSync();
+  final total = (await tools.probe(pdf)).pages;
+  ctx.report(from, stage: 'OCR: procurando páginas sem texto');
+  await _gs(ctx, tools, ['-q', '-sDEVICE=txtwrite', '-sOutputFile=${p.join(dir.path, 't_%d.txt')}', pdf]);
+  final need = <int>[];
+  for (var i = 1; i <= total; i++) {
+    final f = File(p.join(dir.path, 't_$i.txt'));
+    if (!f.existsSync() || latin1.decode(f.readAsBytesSync()).trim().isEmpty) need.add(i);
+  }
+  if (need.isEmpty) return 0;
+  final span = to - from;
+  final images = <String>[];
+  for (var k = 0; k < need.length; k++) {
+    ctx.report(from + span * 0.5 * k / need.length, stage: 'OCR: preparando página ${k + 1} de ${need.length}');
+    final img = p.join(dir.path, 'p_${need[k]}.jpg');
+    await _gs(ctx, tools, [
+      '-q', '-sDEVICE=jpeg', '-dJPEGQ=88', '-r$_ocrDpi', '-dFirstPage=${need[k]}', '-dLastPage=${need[k]}',
+      '-sOutputFile=$img', pdf,
+    ]);
+    images.add(img);
+  }
+  ctx.report(from + span * 0.5, stage: 'OCR: lendo o texto');
+  final read = await ocr(
+    images,
+    (done) => ctx.report(from + span * (0.5 + 0.45 * done / need.length), stage: 'OCR: lendo página $done de ${need.length}'),
+  );
+  var withText = 0;
+  final layers = <(double, double, String)>[for (var i = 0; i < total; i++) (612, 792, '')];
+  for (var k = 0; k < need.length; k++) {
+    final page = read[k];
+    if (page.words.isEmpty || page.width <= 0) continue;
+    final w = page.width * 72 / _ocrDpi, h = page.height * 72 / _ocrDpi;
+    layers[need[k] - 1] = (w, h, textLayerContent(page, w, h));
+    withText++;
+  }
+  if (withText == 0) return 0;
+  final layer = p.join(dir.path, 'texto.pdf'), merged = p.join(dir.path, 'com_texto.pdf');
+  await writeTextLayerPdf(layers, layer);
+  await _qpdf(ctx, tools, [pdf, '--overlay', layer, '--', merged]);
+  await File(merged).copy(pdf);
+  return withText;
+}
+
 /// O que fazer com as páginas da bandeja ao salvar.
 enum TrayOp {
   save('Salvar PDF', 'Salvar'),
@@ -591,6 +643,7 @@ Job buildTrayJob({
   PdfSplitSettings? split,
   PdfConvertSettings? convert,
   String password = '',
+  OcrFn? ocr,
 }) {
   final snapshot = [for (final r in pages) PageRef(r.doc, r.page, r.rotation, r.skew)];
   final cs = compress?.copy(), ss = split?.copy(), vs = convert?.copy();
@@ -604,14 +657,32 @@ Job buildTrayJob({
       final work = await Directory.systemTemp.createTemp('filume_bandeja_');
       try {
         final target = p.join(outDir, op.folder ? name : '$name.pdf');
+        // OCR não se aplica ao exportar imagens.
+        final read = op == TrayOp.images ? null : ocr;
+        String? note;
+
+        /// Aplica o OCR em [pdf]; se o OCR falhar, o PDF sai sem texto e com um aviso.
+        Future<void> addText(String pdf, double from, double to) async {
+          if (read == null) return;
+          try {
+            final n = await _ocrLayer(ctx, tools, pdf, work.path, read, from, to);
+            if (n > 0) note = 'OCR: texto pesquisável em $n ${n == 1 ? 'página' : 'páginas'}';
+          } on OcrError catch (e) {
+            note = 'Salvo sem OCR. ${e.message}';
+          }
+        }
+
+        String? both(String? a, String? b) => a == null ? b : (b == null ? a : '$a · $b');
+
         if (op == TrayOp.save) {
           final tmp = p.join(work.path, 'saida.pdf');
-          await _buildTray(ctx, tools, snapshot, fit, tmp, work.path, jpegQ: jpegQ);
+          await _buildTray(ctx, tools, snapshot, fit, tmp, work.path, span: read == null ? 1 : 0.5, jpegQ: jpegQ);
+          await addText(tmp, 0.5, 0.98);
           final out = await _moveOut(tmp, target);
-          return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out);
+          return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out, warning: note);
         }
         // Um PDF intocado dispensa a montagem (comprimir e proteger usam o original).
-        final single = op.folder ? null : _untouchedDoc(snapshot);
+        final single = op.folder || read != null ? null : _untouchedDoc(snapshot);
         final MediaInfo info;
         var from = 0.0;
         if (single != null) {
@@ -620,8 +691,12 @@ Job buildTrayJob({
           final src = Directory(p.join(work.path, 'origem'))..createSync();
           final tmp = p.join(src.path, '$name.pdf');
           await _buildTray(ctx, tools, snapshot, fit, tmp, work.path, span: 0.3, jpegQ: jpegQ);
-          info = await tools.probe(tmp);
           from = 0.3;
+          if (read != null) {
+            await addText(tmp, 0.3, 0.6);
+            from = 0.6;
+          }
+          info = await tools.probe(tmp);
         }
         final outTmp = Directory(p.join(work.path, 'saida'))..createSync();
         final inner = switch (op) {
@@ -640,7 +715,7 @@ Job buildTrayJob({
             (pr, stage, speed) => ctx.report(from + (1 - from) * pr, stage: stage, speed: speed));
         final r = await inner.body(sub);
         final out = await _moveOut(r.revealPath, target);
-        return JobResult(r.summary, out, warning: r.warning);
+        return JobResult(r.summary, out, warning: both(r.warning, note));
       } finally {
         try {
           work.deleteSync(recursive: true);

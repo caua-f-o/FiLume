@@ -67,7 +67,7 @@ Aplicativo dedicado (`FiLume PDF.exe`, na mesma pasta do FiLume). Tudo gira em t
 | **Imagens** | Exporta cada página como JPG ou PNG em 72, 150 ou 300 dpi. |
 | **Senha** | Protege com AES-256 ou remove a senha (sabendo a atual). |
 
-Ao salvar, uma caixa pede o nome e a pasta, com atalhos para as pastas guardadas nos Ajustes.
+Ao salvar, uma caixa pede o nome e a pasta, com atalhos para as pastas guardadas nos Ajustes. Com o **OCR** ligado, digitalizações e fotos saem com texto pesquisável (reconhecimento do próprio Windows 10/11).
 
 ### 🖼️ Imagem
 

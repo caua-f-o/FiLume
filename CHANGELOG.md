@@ -3,6 +3,16 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.3] — 2026-11-12
+
+### Adicionado
+- **OCR** no FiLume PDF (ligado por padrão, botão na faixa de ferramentas): ao salvar, páginas sem texto (digitalizações, fotos) ganham uma camada de texto invisível, e o PDF passa a aceitar busca, seleção e cópia. Usa o reconhecimento de texto do próprio Windows 10/11, no idioma do sistema; páginas que já têm texto ficam como estão.
+- Digitalização: origem **Automático** (alimentador se tiver papel, senão vidro) e **Frente e verso** como caixa de marcar, com cada lado virando uma página.
+- A janela de digitalizar lembra as opções usadas e os scanners já encontrados, sem procurar de novo a cada abertura (o botão de atualizar procura).
+
+### Corrigido
+- Digitalização pelo alimentador: o pedido agora é montado a partir do que o scanner informa aceitar (resolução, cor, área, formato); nos drivers novos do Windows, o alimentador é usado como item próprio. Scanner sem alimentador ou sem papel avisa com clareza.
+
 ## [1.5.0-beta.2] — 2026-11-12
 
 ### Adicionado

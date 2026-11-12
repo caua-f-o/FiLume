@@ -367,6 +367,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     tools = await FfTools.locate();
     pdf = await PdfTools.locate();
+    scan.load(prefs.scan);
     if (!pdfOnly) upscaler = UpscalerTools.locate();
     queue.tools = tools;
     toolsLoading = false;

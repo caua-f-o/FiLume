@@ -52,6 +52,12 @@ class Prefs extends ChangeNotifier {
   final List<String> pdfFolders = [];
   String? pdfLastDir;
 
+  /// FiLume PDF: OCR ligado (texto pesquisável ao salvar).
+  bool ocr = true;
+
+  /// Opções de digitalização e scanners já encontrados (ver ScanSettings).
+  Map<String, dynamic> scan = {};
+
   /// Cor de destaque do Windows (0xAARRGGBB), se foi possível ler.
   int? systemAccent;
 
@@ -90,6 +96,9 @@ class Prefs extends ChangeNotifier {
           }
           final pl = j['pdfLastDir'];
           if (pl is String) pdfLastDir = pl;
+          if (j['ocr'] is bool) ocr = j['ocr'] as bool;
+          final sc = j['scan'];
+          if (sc is Map) scan = sc.cast<String, dynamic>();
           final rs = j['recents'];
           if (rs is List) {
             recents
@@ -118,6 +127,8 @@ class Prefs extends ChangeNotifier {
         'lastPage': lastPage,
         'keepRecents': keepRecents,
         'pdfFolders': pdfFolders,
+        'ocr': ocr,
+        if (scan.isNotEmpty) 'scan': scan,
         if (pdfLastDir != null) 'pdfLastDir': pdfLastDir,
         'recents': [for (final r in recents) r.toJson()],
       }));

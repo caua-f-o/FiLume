@@ -83,6 +83,7 @@ jobs:
           if (Test-Path $up) { $env:FILUME_UPSCALER_DIR = (Resolve-Path $up).Path }
           dart run tool/image_test.dart smoke/img
           dart run tool/scan_test.dart
+          dart run tool/ocr_test.dart
 
       - name: Empacotar
         shell: pwsh

@@ -160,6 +160,8 @@ class OrganizerWorkspace extends StatelessWidget {
         builder: (context) => _ScanDialog(
           scanner: state.scanner,
           settings: state.scan,
+          // Guarda as opções e os scanners encontrados para a próxima vez.
+          onSave: () => state.prefs.update(() => state.prefs.scan = state.scan.toJson()),
           onPage: (path) => state.docs.addPaths([path]),
         ),
       );
@@ -668,7 +670,8 @@ class _PageViewerState extends State<_PageViewer> {
 // ---------------------------------------------------------------- digitalizar
 
 class _ScanDialog extends StatefulWidget {
-  const _ScanDialog({required this.scanner, required this.settings, required this.onPage});
+  const _ScanDialog({required this.scanner, required this.settings, required this.onPage, required this.onSave});
+  final VoidCallback onSave;
   final Scanner scanner;
   final ScanSettings settings;
   final void Function(String path) onPage;
@@ -692,7 +695,7 @@ class _ScanDialogState extends State<_ScanDialog> {
     super.initState();
     // Fora do Windows só existe o scanner de rede.
     if (!Platform.isWindows) s.driver = 'escl';
-    _loadDevices();
+    _showKnownOrSearch();
   }
 
   @override
@@ -706,6 +709,20 @@ class _ScanDialogState extends State<_ScanDialog> {
     if (!list.any((d) => d.id == s.device)) s.device = list.isEmpty ? '' : list.first.id;
   }
 
+  /// Mostra os scanners já conhecidos; só procura se ainda não houver nenhum.
+  void _showKnownOrSearch() {
+    final known = s.knownFor(s.driver);
+    if (known.isEmpty) {
+      _loadDevices();
+    } else {
+      _load++;
+      setState(() {
+        _error = _details = null;
+        _setDevices(known);
+      });
+    }
+  }
+
   Future<void> _loadDevices() async {
     final ticket = ++_load;
     setState(() {
@@ -715,7 +732,11 @@ class _ScanDialogState extends State<_ScanDialog> {
     try {
       final list = await widget.scanner.devices(s.driver);
       if (!mounted || ticket != _load) return;
-      setState(() => _setDevices(list));
+      // Na rede, quem foi adicionado pelo endereço continua na lista.
+      final all = [...list, ...s.knownFor(s.driver).where((k) => s.driver == 'escl' && !list.any((d) => d.id == k.id || d.name == k.name))];
+      s.remember(s.driver, all);
+      setState(() => _setDevices(all));
+      widget.onSave();
     } catch (e) {
       if (!mounted || ticket != _load) return;
       setState(() {
@@ -736,9 +757,11 @@ class _ScanDialogState extends State<_ScanDialog> {
       final d = await widget.scanner.esclAt(_host.text);
       if (!mounted) return;
       setState(() {
-        _setDevices(widget.scanner.knownEscl);
+        s.remember('escl', [...s.knownFor('escl').where((k) => k.id != d.id), d]);
+        _setDevices(s.knownFor('escl'));
         s.device = d.id;
       });
+      widget.onSave();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -751,6 +774,7 @@ class _ScanDialogState extends State<_ScanDialog> {
 
   Future<void> _scan() async {
     final token = _cancelToken = ScanCancel();
+    widget.onSave();
     setState(() {
       _scanning = true;
       _pages = 0;
@@ -773,6 +797,7 @@ class _ScanDialogState extends State<_ScanDialog> {
   }
 
   void _close() {
+    widget.onSave();
     _cancelToken?.cancel();
     Navigator.pop(context);
   }
@@ -808,7 +833,7 @@ class _ScanDialogState extends State<_ScanDialog> {
               label('Onde está o scanner'),
               seg({if (Platform.isWindows) 'wia': 'Neste computador (USB)', 'escl': 'Na rede (Wi-Fi ou cabo)'}, s.driver, (v) {
                 s.driver = v;
-                _loadDevices();
+                _showKnownOrSearch();
               }),
               label('Scanner'),
               if (devices == null)
@@ -860,7 +885,7 @@ class _ScanDialogState extends State<_ScanDialog> {
                         child: Text(_probing ? 'Conectando…' : 'Conectar'),
                       ),
                     IconButton(
-                      tooltip: 'Procurar de novo',
+                      tooltip: 'Procurar scanners de novo',
                       onPressed: _scanning ? null : _loadDevices,
                       icon: const Icon(Icons.refresh),
                     ),
@@ -868,7 +893,20 @@ class _ScanDialogState extends State<_ScanDialog> {
                 ),
               ],
               label('Origem do papel'),
-              seg({'glass': 'Vidro', 'feeder': 'Alimentador', 'duplex': 'Frente e verso'}, s.source, (v) => s.source = v),
+              seg({'auto': 'Automático', 'glass': 'Vidro', 'feeder': 'Alimentador'}, s.source, (v) => s.source = v),
+              CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Frente e verso'),
+                subtitle: Text(
+                  s.source == 'glass'
+                      ? 'Só no alimentador.'
+                      : 'Pelo alimentador; cada lado da folha vira uma página.',
+                ),
+                value: s.duplex && s.source != 'glass',
+                onChanged: _scanning || s.source == 'glass' ? null : (v) => setState(() => s.duplex = v ?? false),
+              ),
               label('Resolução'),
               seg({150: '150 dpi', 200: '200 dpi', 300: '300 dpi', 600: '600 dpi'}, s.dpi, (v) => s.dpi = v),
               label('Cores'),

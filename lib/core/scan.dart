@@ -23,12 +23,65 @@ class ScanSettings {
   String driver = 'wia';
   String device = '';
 
-  /// "glass" (vidro), "feeder" (alimentador) ou "duplex" (frente e verso).
-  String source = 'glass';
+  /// "auto" (o scanner decide: alimentador se tiver papel, senão vidro),
+  /// "glass" (vidro) ou "feeder" (alimentador).
+  String source = 'auto';
+
+  /// Frente e verso no alimentador: cada lado vira uma página.
+  bool duplex = false;
   int dpi = 300;
 
   /// "color", "gray" ou "bw".
   String color = 'color';
+
+  /// Aparelhos já encontrados, para não procurar toda vez.
+  final List<ScanDevice> known = [];
+
+  List<ScanDevice> knownFor(String driver) => [
+        for (final d in known)
+          if (d.driver == driver) d,
+      ];
+
+  void remember(String driver, List<ScanDevice> list) {
+    known
+      ..removeWhere((d) => d.driver == driver)
+      ..addAll(list);
+  }
+
+  Map<String, dynamic> toJson() => {
+        'driver': driver,
+        'device': device,
+        'source': source,
+        'duplex': duplex,
+        'dpi': dpi,
+        'color': color,
+        'known': [
+          for (final d in known) {'driver': d.driver, 'id': d.id, 'name': d.name},
+        ],
+      };
+
+  void load(Map<String, dynamic> j) {
+    String pick(String key, List<String> ok, String current) {
+      final v = j[key];
+      return v is String && ok.contains(v) ? v : current;
+    }
+
+    driver = pick('driver', const ['wia', 'escl'], driver);
+    source = pick('source', const ['auto', 'glass', 'feeder'], source);
+    color = pick('color', const ['color', 'gray', 'bw'], color);
+    if (j['device'] is String) device = j['device'] as String;
+    if (j['duplex'] is bool) duplex = j['duplex'] as bool;
+    if (const [150, 200, 300, 600].contains(j['dpi'])) dpi = j['dpi'] as int;
+    final k = j['known'];
+    if (k is List) {
+      known.clear();
+      for (final e in k) {
+        if (e is Map && e['driver'] is String && e['id'] is String && e['name'] is String) {
+          known.add(ScanDevice(e['driver'] as String, e['id'] as String, e['name'] as String));
+        }
+      }
+    }
+  }
 }
 
 class ScanError implements Exception {
@@ -51,24 +104,12 @@ class ScanCancel {
 }
 
 class Scanner {
-  List<ScanDevice> _escl = const [];
-
-  Future<List<ScanDevice>> devices(String driver) async {
-    if (driver == 'escl') return _escl = await EsclScanner.discover();
-    return WiaScanner.devices();
-  }
+  /// Procura scanners: os instalados no Windows ("wia") ou os da rede ("escl").
+  Future<List<ScanDevice>> devices(String driver) =>
+      driver == 'escl' ? EsclScanner.discover() : WiaScanner.devices();
 
   /// Scanner de rede informado à mão (IP ou nome), quando a busca não acha.
-  Future<ScanDevice> esclAt(String host) async {
-    final d = await EsclScanner.probe(host);
-    _escl = [
-      ..._escl.where((e) => e.id != d.id),
-      d,
-    ];
-    return d;
-  }
-
-  List<ScanDevice> get knownEscl => _escl;
+  Future<ScanDevice> esclAt(String host) => EsclScanner.probe(host);
 
   /// Digitaliza; cada página pronta é avisada em [onPage] (arquivo de imagem)
   /// e todas voltam no fim, em ordem.
@@ -109,11 +150,78 @@ class Scanner {
 /// chamada por um script do PowerShell que o FiLume grava e executa.
 class WiaScanner {
   static const _script = r'''
-param([string]$Action, [string]$DeviceId = '', [string]$Source = 'glass', [int]$Dpi = 300, [string]$Color = 'color', [string]$OutDir = '')
+param([string]$Action, [string]$DeviceId = '', [string]$Source = 'auto', [int]$Duplex = 0, [int]$Dpi = 300, [string]$Color = 'color', [string]$OutDir = '')
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 function Set-Prop($props, $id, $value) { try { $props.Item("$id").Value = $value } catch {} }
 function Get-Prop($props, $id) { try { return $props.Item("$id").Value } catch { return $null } }
+# Nos drivers novos (WIA 2) vidro e alimentador sao itens separados do aparelho.
+function Find-Item($dev, $category, $pattern) {
+  foreach ($it in $dev.Items) {
+    $cat = Get-Prop $it.Properties 4125
+    if ($cat -and ("$cat".ToUpper() -eq $category)) { return $it }
+  }
+  foreach ($it in $dev.Items) {
+    $name = Get-Prop $it.Properties 4098
+    if ($name -and ("$name" -match $pattern)) { return $it }
+  }
+  return $null
+}
+$jpeg = '{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}'
+$bmp = '{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}'
+$script:fmt = $jpeg
+$script:n = 0
+# Digitaliza pelo vidro (1 pagina) ou pelo alimentador (ate acabar o papel).
+function Scan-Pages($dev, $feeder) {
+  $item = $null
+  if ($feeder) { $item = Find-Item $dev '{FE131934-F84C-42AD-8DA4-6129CDDD7288}' 'feed|adf' }
+  else { $item = Find-Item $dev '{FB607B1F-43F3-488B-855B-FB703EC342A6}' 'flat|platen' }
+  if ($null -eq $item) { $item = $dev.Items.Item(1) }
+  # 3088 = origem do papel: 1 alimentador, 2 vidro, 4 frente e verso
+  $select = 2
+  if ($feeder) { $select = 1; if ($Duplex -eq 1) { $select = 5 } }
+  Set-Prop $dev.Properties 3088 $select
+  Set-Prop $item.Properties 3088 $select
+  if ($feeder) { Set-Prop $dev.Properties 3096 1; Set-Prop $item.Properties 3096 1 }
+  # Area de leitura, em milesimos de polegada
+  $bedW = Get-Prop $item.Properties 6165
+  $bedH = Get-Prop $item.Properties 6166
+  if (-not ($bedW -and $bedH)) {
+    $bedW = Get-Prop $dev.Properties $(if ($feeder) { 3076 } else { 3074 })
+    $bedH = Get-Prop $dev.Properties $(if ($feeder) { 3077 } else { 3075 })
+  }
+  $got = 0
+  while ($true) {
+    $props = $item.Properties
+    Set-Prop $props 6146 $(switch ($Color) { 'gray' { 2 } 'bw' { 4 } default { 1 } })
+    Set-Prop $props 6147 $Dpi
+    Set-Prop $props 6148 $Dpi
+    Set-Prop $props 6149 0
+    Set-Prop $props 6150 0
+    if ($bedW -and $bedH) {
+      Set-Prop $props 6151 ([int]($bedW * $Dpi / 1000))
+      Set-Prop $props 6152 ([int]($bedH * $Dpi / 1000))
+    }
+    $img = $null
+    try { $img = $item.Transfer($script:fmt) }
+    catch {
+      # Depois da primeira folha, erro no alimentador = acabou o papel.
+      if ($got -gt 0 -and $feeder) { break }
+      if ($script:fmt -eq $bmp) { throw }
+      # Alguns drivers so entregam BMP.
+      $script:fmt = $bmp
+      $img = $item.Transfer($script:fmt)
+    }
+    $got++
+    $script:n++
+    $ext = $img.FileExtension
+    if (-not $ext) { $ext = 'jpg' }
+    $path = Join-Path $OutDir ('pagina_{0:D4}.{1}' -f $script:n, $ext.ToLower())
+    $img.SaveFile($path)
+    "PAGE`t$path"
+    if (-not $feeder) { break }
+  }
+}
 try {
   $dm = New-Object -ComObject WIA.DeviceManager
   if ($Action -eq 'list') {
@@ -126,46 +234,17 @@ try {
   foreach ($i in $dm.DeviceInfos) { if ($i.DeviceID -eq $DeviceId) { $info = $i } }
   if ($null -eq $info) { "ERR`tgone"; exit 2 }
   $dev = $info.Connect()
-  $feeder = $Source -ne 'glass'
-  # 3088 = origem do papel: 1 alimentador, 2 vidro, 4 frente e verso
-  Set-Prop $dev.Properties 3088 $(if ($Source -eq 'duplex') { 5 } elseif ($feeder) { 1 } else { 2 })
-  if ($feeder) { Set-Prop $dev.Properties 3096 1 }
-  # Tamanho da area de leitura, em milesimos de polegada (vidro ou alimentador)
-  $bedW = Get-Prop $dev.Properties $(if ($feeder) { 3076 } else { 3074 })
-  $bedH = Get-Prop $dev.Properties $(if ($feeder) { 3077 } else { 3075 })
-  $jpeg = '{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}'
-  $bmp = '{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}'
-  $fmt = $jpeg
-  $n = 0
-  while ($true) {
-    $item = $dev.Items.Item(1)
-    $props = $item.Properties
-    Set-Prop $props 6146 $(switch ($Color) { 'gray' { 2 } 'bw' { 4 } default { 1 } })
-    Set-Prop $props 6147 $Dpi
-    Set-Prop $props 6148 $Dpi
-    Set-Prop $props 6149 0
-    Set-Prop $props 6150 0
-    if ($bedW -and $bedH) {
-      Set-Prop $props 6151 ([int]($bedW * $Dpi / 1000))
-      Set-Prop $props 6152 ([int]($bedH * $Dpi / 1000))
-    }
-    $img = $null
-    try { $img = $item.Transfer($fmt) }
-    catch {
-      # Depois da primeira folha, erro no alimentador = acabou o papel.
-      if ($n -gt 0 -and $feeder) { break }
-      if ($fmt -eq $bmp) { throw }
-      # Alguns drivers so entregam BMP.
-      $fmt = $bmp
-      $img = $item.Transfer($fmt)
-    }
-    $n++
-    $ext = $img.FileExtension
-    if (-not $ext) { $ext = 'jpg' }
-    $path = Join-Path $OutDir ('pagina_{0:D4}.{1}' -f $n, $ext.ToLower())
-    $img.SaveFile($path)
-    "PAGE`t$path"
-    if (-not $feeder) { break }
+  $caps = Get-Prop $dev.Properties 3086
+  $feedItem = Find-Item $dev '{FE131934-F84C-42AD-8DA4-6129CDDD7288}' 'feed|adf'
+  $hasFeeder = ($null -ne $feedItem) -or ($caps -and (($caps -band 1) -eq 1))
+  if ($Source -eq 'feeder') {
+    if (-not $hasFeeder) { "ERR`tnofeeder"; exit 4 }
+    Scan-Pages $dev $true
+  } elseif ($Source -eq 'auto' -and $hasFeeder) {
+    # Automatico: tenta o alimentador; sem papel nele, vai de vidro.
+    try { Scan-Pages $dev $true } catch { if ($script:n -eq 0) { $script:fmt = $jpeg; Scan-Pages $dev $false } }
+  } else {
+    Scan-Pages $dev $false
   }
   exit 0
 } catch {
@@ -195,7 +274,9 @@ try {
   static ScanError _error(String raw) {
     final low = raw.toLowerCase();
     String msg;
-    if (low.contains('80210003')) {
+    if (low.contains('nofeeder')) {
+      msg = 'Este scanner não tem alimentador de folhas. Use "Vidro" ou "Automático".';
+    } else if (low.contains('80210003')) {
       msg = 'Sem papel no alimentador.';
     } else if (low.contains('80210006')) {
       msg = 'O scanner está ocupado. Espere um pouco e tente de novo.';
@@ -239,6 +320,7 @@ try {
       'powershell.exe',
       await _args([
         '-Action', 'scan', '-DeviceId', s.device, '-Source', s.source,
+        '-Duplex', s.duplex && s.source != 'glass' ? '1' : '0',
         '-Dpi', '${s.dpi}', '-Color', s.color, '-OutDir', dir,
       ]),
     );
@@ -455,36 +537,103 @@ class EsclScanner {
         'e na mesma rede. (Ele precisa aceitar AirScan/eSCL.)');
   }
 
-  static String settingsXml(ScanSettings s) {
-    final feeder = s.source != 'glass';
+  static String? _section(String xml, String tag) =>
+      RegExp('<(?:\\w+:)?$tag>([\\s\\S]*?)</(?:\\w+:)?$tag>').firstMatch(xml)?.group(1);
+
+  static List<String> _values(String xml, String tag) =>
+      [for (final m in RegExp('<(?:\\w+:)?$tag>([^<]+)<').allMatches(xml)) m.group(1)!.trim()];
+
+  /// Pedido de digitalização. Com [caps] (o XML de capacidades do scanner),
+  /// resolução, cor, formato e área são ajustados ao que ele aceita.
+  static String settingsXml(ScanSettings s, {required bool feeder, String caps = '', bool regions = true}) {
+    final duplex = feeder && s.duplex;
+    final part = (feeder
+            ? (duplex ? _section(caps, 'AdfDuplexInputCaps') : null) ?? _section(caps, 'AdfSimplexInputCaps')
+            : _section(caps, 'PlatenInputCaps')) ??
+        caps;
+    // Resolução: a mais próxima da pedida entre as que o scanner oferece.
+    var dpi = s.dpi;
+    final offered = [for (final v in _values(part, 'XResolution')) int.tryParse(v)].whereType<int>().toList();
+    if (offered.isNotEmpty) {
+      dpi = offered.reduce((a, b) => (a - s.dpi).abs() <= (b - s.dpi).abs() ? a : b);
+    }
     // Preto e branco puro raramente é aceito junto com JPEG; vai em tons de cinza.
-    final mode = s.color == 'color' ? 'RGB24' : 'Grayscale8';
+    var mode = s.color == 'color' ? 'RGB24' : 'Grayscale8';
+    final modes = _values(part, 'ColorMode');
+    if (modes.isNotEmpty && !modes.contains(mode)) {
+      mode = const ['RGB24', 'Grayscale8', 'BlackAndWhite1'].firstWhere(modes.contains, orElse: () => modes.first);
+    }
+    final formats = [..._values(part, 'DocumentFormat'), ..._values(part, 'DocumentFormatExt')];
+    final format = formats.isEmpty || formats.contains('image/jpeg')
+        ? 'image/jpeg'
+        : (formats.contains('application/pdf') ? 'application/pdf' : formats.first);
+    final maxW = int.tryParse(_values(part, 'MaxWidth').firstOrNull ?? '');
+    final maxH = int.tryParse(_values(part, 'MaxHeight').firstOrNull ?? '');
     return '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" '
         'xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">'
         '<pwg:Version>2.0</pwg:Version>'
+        '${regions && maxW != null && maxH != null ? '<pwg:ScanRegions><pwg:ScanRegion>'
+            '<pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>'
+            '<pwg:Height>$maxH</pwg:Height><pwg:Width>$maxW</pwg:Width>'
+            '<pwg:XOffset>0</pwg:XOffset><pwg:YOffset>0</pwg:YOffset>'
+            '</pwg:ScanRegion></pwg:ScanRegions>' : ''}'
         '<pwg:InputSource>${feeder ? 'Feeder' : 'Platen'}</pwg:InputSource>'
-        '${feeder ? '<scan:Duplex>${s.source == 'duplex'}</scan:Duplex>' : ''}'
-        '<pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>'
-        '<scan:DocumentFormatExt>image/jpeg</scan:DocumentFormatExt>'
         '<scan:ColorMode>$mode</scan:ColorMode>'
-        '<scan:XResolution>${s.dpi}</scan:XResolution>'
-        '<scan:YResolution>${s.dpi}</scan:YResolution>'
+        '<pwg:DocumentFormat>$format</pwg:DocumentFormat>'
+        '${caps.isEmpty || caps.contains('DocumentFormatExt') ? '<scan:DocumentFormatExt>$format</scan:DocumentFormatExt>' : ''}'
+        '<scan:XResolution>$dpi</scan:XResolution>'
+        '<scan:YResolution>$dpi</scan:YResolution>'
+        '${feeder ? '<scan:Duplex>$duplex</scan:Duplex>' : ''}'
         '</scan:ScanSettings>';
+  }
+
+  static Future<String> _get(HttpClient client, String url) async {
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      final res = await req.close().timeout(const Duration(seconds: 8));
+      final body = await res.transform(const Utf8Decoder(allowMalformed: true)).join();
+      return res.statusCode == 200 ? body : '';
+    } catch (_) {
+      return '';
+    }
   }
 
   static Future<void> scan(ScanSettings s, String dir, void Function(String) onPage, ScanCancel cancel) async {
     final base = s.device;
     final client = _client();
     Uri? job;
+    var feeder = false;
     cancel._stop = () => client.close(force: true);
     try {
-      final HttpClientResponse created;
-      try {
+      // O que o scanner oferece e como está o alimentador agora.
+      final caps = await _get(client, '$base/ScannerCapabilities');
+      final adfState = _values(await _get(client, '$base/ScannerStatus'), 'AdfState').firstOrNull ?? '';
+      final hasAdf = caps.isEmpty || _section(caps, 'Adf') != null;
+      if (cancel.canceled) return;
+      if (s.source == 'feeder') {
+        if (!hasAdf) throw ScanError('Este scanner não tem alimentador de folhas. Use "Vidro" ou "Automático".');
+        if (adfState == 'ScannerAdfEmpty') throw ScanError('Sem papel no alimentador.');
+      }
+      feeder = s.source == 'feeder' || (s.source == 'auto' && hasAdf && adfState == 'ScannerAdfLoaded');
+      if (feeder && s.duplex && caps.isNotEmpty && _section(caps, 'AdfDuplexInputCaps') == null) {
+        throw ScanError('Este scanner não faz frente e verso sozinho. Desmarque "Frente e verso".');
+      }
+      Future<HttpClientResponse> post(bool regions) async {
         final req = await client.postUrl(Uri.parse('$base/ScanJobs'));
         req.headers.contentType = ContentType('text', 'xml', charset: 'utf-8');
-        req.write(settingsXml(s));
-        created = await req.close().timeout(const Duration(seconds: 30));
+        req.write(settingsXml(s, feeder: feeder, caps: caps, regions: regions));
+        return req.close().timeout(const Duration(seconds: 30));
+      }
+
+      HttpClientResponse created;
+      try {
+        created = await post(true);
+        if (created.statusCode == 409 || created.statusCode == 400) {
+          // Alguns aparelhos recusam a área de leitura explícita: tenta sem ela.
+          await created.drain<void>();
+          created = await post(false);
+        }
       } catch (e) {
         if (cancel.canceled) return;
         throw ScanError('Não consegui falar com o scanner de rede. Ele está ligado e na mesma rede?', '$e');
@@ -494,7 +643,7 @@ class EsclScanner {
       if (created.statusCode != 201 || loc == null) {
         throw ScanError(
           switch (created.statusCode) {
-            409 => 'O scanner recusou essas opções. Tente outra resolução, cor ou origem do papel.',
+            409 || 400 => 'O scanner recusou essas opções. Tente outra resolução, cor ou origem do papel.',
             503 => 'O scanner está ocupado. Espere um pouco e tente de novo.',
             _ => 'O scanner não aceitou o pedido de digitalização.',
           },
@@ -515,7 +664,7 @@ class EsclScanner {
           final path = p.join(dir, 'pagina_${n.toString().padLeft(4, '0')}.$ext');
           await res.pipe(File(path).openWrite());
           onPage(path);
-          if (s.source == 'glass') break;
+          if (!feeder) break;
         } else if (res.statusCode == 503 && busy < 90) {
           // Ainda lendo a folha: espera e pergunta de novo.
           await res.drain<void>();
@@ -527,7 +676,7 @@ class EsclScanner {
           if (n == 0 && res.statusCode != 404 && res.statusCode != 410) {
             throw ScanError('O scanner parou antes de entregar a página.', 'HTTP ${res.statusCode}');
           }
-          if (n == 0 && s.source != 'glass') throw ScanError('Sem papel no alimentador.');
+          if (n == 0 && feeder) throw ScanError('Sem papel no alimentador.');
           break;
         }
       }

@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../core/ffmpeg.dart';
 import '../core/job.dart';
 import '../core/launch.dart';
+import '../core/ocr.dart';
 import '../core/pdf.dart';
 import '../core/prefs.dart';
 import '../core/state.dart';
@@ -206,6 +207,7 @@ class _PdfShellState extends State<PdfShell> {
         split: state.pdfSplit,
         convert: state.pdfConvert,
         password: state.pdfPassword.password,
+        ocr: state.prefs.ocr ? WindowsOcr.recognize : null,
       )..module = 'pdf',
     ]);
   }
@@ -502,13 +504,17 @@ class _Toolbar extends StatelessWidget {
               icon: const Icon(Icons.scanner_outlined, size: 18),
               label: const Text('Digitalizar'),
             ),
-            const Tooltip(
-              message: 'OCR (texto pesquisável) chega numa próxima beta.\nVai vir ligado por padrão.',
+            Tooltip(
+              message: 'OCR: ao salvar, digitalizações e fotos ganham texto pesquisável\n'
+                  '(dá para buscar, selecionar e copiar). A aparência não muda.',
               child: FilterChip(
-                avatar: Icon(Icons.text_fields, size: 18),
-                label: Text('OCR · em breve'),
-                selected: false,
-                onSelected: null,
+                avatar: state.prefs.ocr ? null : const Icon(Icons.text_fields, size: 18),
+                label: const Text('OCR'),
+                selected: state.prefs.ocr,
+                onSelected: (v) {
+                  state.prefs.update(() => state.prefs.ocr = v);
+                  state.touch();
+                },
               ),
             ),
           ]),

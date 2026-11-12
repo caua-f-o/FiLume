@@ -38,21 +38,39 @@ Future<void> main() async {
 
   // ---- eSCL contra um scanner de mentira (3 folhas no alimentador)
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-  var sheets = 3, busy = 1;
+  var sheets = 3, busy = 1, refuseRegions = false, hasAdf = true;
+  final posts = <String>[];
+  var glassLeft = 1;
   String? posted;
   var deleted = false;
   server.listen((r) async {
     final path = r.uri.path;
     if (r.method == 'GET' && path == '/eSCL/ScannerCapabilities') {
-      r.response.write('<scan:ScannerCapabilities><pwg:MakeAndModel>Falso 3000</pwg:MakeAndModel></scan:ScannerCapabilities>');
+      r.response.write('<scan:ScannerCapabilities><pwg:MakeAndModel>Falso 3000</pwg:MakeAndModel>'
+          '<scan:Platen><scan:PlatenInputCaps><scan:MaxWidth>2550</scan:MaxWidth><scan:MaxHeight>3508</scan:MaxHeight>'
+          '<scan:ColorMode>RGB24</scan:ColorMode><scan:ColorMode>Grayscale8</scan:ColorMode><pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>'
+          '<scan:XResolution>100</scan:XResolution><scan:XResolution>300</scan:XResolution></scan:PlatenInputCaps></scan:Platen>'
+          '${hasAdf ? '<scan:Adf><scan:AdfSimplexInputCaps><scan:MaxWidth>2550</scan:MaxWidth><scan:MaxHeight>4200</scan:MaxHeight>'
+              '<scan:ColorMode>Grayscale8</scan:ColorMode><pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>'
+              '<scan:XResolution>150</scan:XResolution><scan:XResolution>300</scan:XResolution></scan:AdfSimplexInputCaps></scan:Adf>' : ''}'
+          '</scan:ScannerCapabilities>');
+    } else if (r.method == 'GET' && path == '/eSCL/ScannerStatus') {
+      r.response.write('<scan:ScannerStatus><pwg:State>Idle</pwg:State>'
+          '${hasAdf ? '<scan:AdfState>${sheets > 0 ? 'ScannerAdfLoaded' : 'ScannerAdfEmpty'}</scan:AdfState>' : ''}</scan:ScannerStatus>');
     } else if (r.method == 'POST' && path == '/eSCL/ScanJobs') {
       posted = await r.cast<List<int>>().transform(const SystemEncoding().decoder).join();
-      r.response.statusCode = 201;
-      r.response.headers.set('Location', '/eSCL/ScanJobs/abc');
+      posts.add(posted!);
+      glassLeft = 1;
+      if (refuseRegions && posted!.contains('ScanRegions')) {
+        r.response.statusCode = 409;
+      } else {
+        r.response.statusCode = 201;
+        r.response.headers.set('Location', '/eSCL/ScanJobs/abc');
+      }
     } else if (r.method == 'GET' && path == '/eSCL/ScanJobs/abc/NextDocument') {
       if (busy-- > 0) {
         r.response.statusCode = 503;
-      } else if (sheets-- > 0) {
+      } else if (posted!.contains('Platen') ? glassLeft-- > 0 : sheets-- > 0) {
         r.response.headers.contentType = ContentType('image', 'jpeg');
         r.response.add([0xFF, 0xD8, 0xFF, 0xD9]);
       } else {
@@ -78,12 +96,61 @@ Future<void> main() async {
         ..color = 'gray',
       onPage: live.add);
   check('alimentador: 3 páginas, uma a uma', pages.length == 3 && live.length == 3 && pages.every((f) => File(f).lengthSync() == 4));
-  check('opções enviadas', posted != null && posted!.contains('<pwg:InputSource>Feeder') && posted!.contains('Grayscale8') && posted!.contains('<scan:XResolution>200'));
+  check('opções ajustadas ao scanner (150 dpi mais próximo de 200, área do alimentador)',
+      posted != null && posted!.contains('<pwg:InputSource>Feeder') && posted!.contains('Grayscale8') && posted!.contains('<scan:XResolution>150') && posted!.contains('<pwg:Height>4200') && posted!.contains('<scan:Duplex>false'));
+  sheets = 2;
+  busy = 0;
+  final auto = await scanner.scan(ScanSettings()
+    ..driver = 'escl'
+    ..device = dev.id);
+  check('automático com papel no alimentador: usa o alimentador', auto.length == 2 && posted!.contains('Feeder'));
+  final autoGlass = await scanner.scan(ScanSettings()
+    ..driver = 'escl'
+    ..device = dev.id);
+  check('automático sem papel: vai de vidro', autoGlass.length == 1 && posted!.contains('Platen'));
+  refuseRegions = true;
+  posts.clear();
+  sheets = 1;
+  final retry = await scanner.scan(ScanSettings()
+    ..driver = 'escl'
+    ..device = dev.id
+    ..source = 'feeder');
+  check('recusa da área: tenta de novo sem ela', retry.length == 1 && posts.length == 2 && !posts.last.contains('ScanRegions'));
+  refuseRegions = false;
+  try {
+    sheets = 2;
+    await scanner.scan(ScanSettings()
+      ..driver = 'escl'
+      ..device = dev.id
+      ..source = 'feeder'
+      ..duplex = true);
+    check('frente e verso sem suporte', false);
+  } on ScanError catch (e) {
+    check('frente e verso sem suporte avisa', e.message.contains('frente e verso'));
+  }
+  hasAdf = false;
+  try {
+    await scanner.scan(ScanSettings()
+      ..driver = 'escl'
+      ..device = dev.id
+      ..source = 'feeder');
+    check('sem alimentador', false);
+  } on ScanError catch (e) {
+    check('scanner sem alimentador avisa', e.message.contains('não tem alimentador'));
+  }
+  hasAdf = true;
+  final st = ScanSettings()
+    ..driver = 'escl'
+    ..duplex = true
+    ..remember('escl', [dev]);
+  final back = ScanSettings()..load(st.toJson());
+  check('opções e scanners guardados', back.driver == 'escl' && back.duplex && back.knownFor('escl').single.name == 'Falso 3000');
   sheets = 5;
   busy = 0;
   final one = await scanner.scan(ScanSettings()
     ..driver = 'escl'
-    ..device = dev.id);
+    ..device = dev.id
+    ..source = 'glass');
   check('vidro: só 1 página', one.length == 1);
   sheets = 0;
   try {
