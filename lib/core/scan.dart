@@ -647,6 +647,15 @@ class EsclScanner {
       if (feeder && s.duplex && caps.isNotEmpty && _section(caps, 'AdfDuplexInputCaps') == null) {
         throw ScanError('Este scanner não faz frente e verso sozinho. Desmarque "Frente e verso".', details());
       }
+      if (s.source == 'feeder' && adfState == 'ScannerAdfEmpty') {
+        // O sensor do alimentador às vezes demora a acusar o papel: espera um pouco por ele.
+        for (var i = 0; i < 8 && adfState == 'ScannerAdfEmpty' && !cancel.canceled; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          adfState = _values(await _get(client, '$base/ScannerStatus'), 'AdfState').firstOrNull ?? adfState;
+        }
+        log.add('Depois de esperar 12 s pelo sensor do alimentador: AdfState: $adfState');
+      }
+      log.add('Opções: ${s.dpi} dpi · ${s.color} · frente e verso: ${feeder && s.duplex ? 'sim' : 'não'}');
       // Formas do pedido, da mais completa à mais simples: cada aparelho tem suas manias.
       final variants = <(String, bool, bool)>[
         ('completo', true, false),
@@ -654,13 +663,15 @@ class EsclScanner {
         if (feeder) ('mínimo', false, true),
       ];
       var n = 0;
-      var refused = 0;
+      var refused = 0, tried = 0;
       for (var v = 0; v < variants.length && n == 0 && !cancel.canceled; v++) {
         final (label, regions, bare) = variants[v];
         final xml = settingsXml(s, feeder: feeder, caps: caps, regions: regions, bare: bare);
         if (v > 0 && xml == settingsXml(s, feeder: feeder, caps: caps, regions: variants[v - 1].$2, bare: variants[v - 1].$3)) {
           continue; // igual ao pedido anterior: não adianta repetir
         }
+        tried++;
+        if (tried == 1) log.add('Pedido enviado: ${xml.substring(xml.indexOf('<pwg:Version>'))}');
         final HttpClientResponse created;
         try {
           final req = await client.postUrl(Uri.parse('$base/ScanJobs'));
@@ -678,6 +689,12 @@ class EsclScanner {
             '${reply.trim().isEmpty ? '' : ' ${reply.trim().replaceAll(RegExp(r'\s+'), ' ')}'}');
         if (created.statusCode == 409 || created.statusCode == 400) {
           refused++;
+          if (feeder) {
+            // 409 é também como os scanners avisam "alimentador vazio": confere o estado dele.
+            final st = await _get(client, '$base/ScannerStatus');
+            adfState = _values(st, 'AdfState').firstOrNull ?? adfState;
+            log.add('  estado depois da recusa: ${_values(st, 'State').firstOrNull ?? '?'} · AdfState: ${adfState.isEmpty ? '(não informa)' : adfState}');
+          }
           continue;
         }
         if (created.statusCode == 503) {
@@ -744,13 +761,13 @@ class EsclScanner {
       }
       if (n == 0 && !cancel.canceled) {
         final String msg;
-        if (refused == variants.length) {
+        if (feeder && adfState == 'ScannerAdfEmpty') {
+          msg = 'O próprio scanner informa que o alimentador está vazio e, por isso, recusa digitalizar por ele. '
+              'Empurre as folhas até o fim, até o aparelho reconhecer o papel (ele costuma apitar ou mudar a tela), e tente de novo.';
+        } else if (refused == tried) {
           msg = 'O scanner recusou essas opções. Tente outra resolução, cor ou origem do papel.';
         } else if (!feeder) {
           msg = 'O scanner não entregou a página.';
-        } else if (adfState == 'ScannerAdfEmpty') {
-          msg = 'O scanner informa que não há papel no alimentador. Empurre as folhas até o fim, '
-              'até ele reconhecer o papel, e tente de novo.';
         } else if (adfState.contains('Jam')) {
           msg = 'Papel preso no alimentador.';
         } else if (adfState.contains('Open')) {

@@ -179,7 +179,7 @@ Future<void> main() async {
       ..source = 'feeder');
     check('alimentador vazio', false);
   } on ScanError catch (e) {
-    check('alimentador vazio', e.message.contains('não há papel') && e.details.contains('AdfState: ScannerAdfEmpty'), '\n${e.details}');
+    check('alimentador vazio', e.message.contains('alimentador está vazio') && e.details.contains('AdfState: ScannerAdfEmpty'), '\n${e.details}');
   }
   try {
     await scanner.esclAt('127.0.0.1:1');

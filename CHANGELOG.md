@@ -3,6 +3,11 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.5] — 2026-11-12
+
+### Alterado
+- Alimentador pela rede: quando o scanner informa que o alimentador está vazio, o FiLume PDF espera até 12 segundos pelo sensor antes de pedir a digitalização, e o aviso deixa claro que a recusa veio do próprio aparelho. O diagnóstico agora traz o pedido enviado e o estado do scanner depois de cada recusa.
+
 ## [1.5.0-beta.4] — 2026-11-12
 
 ### Alterado
