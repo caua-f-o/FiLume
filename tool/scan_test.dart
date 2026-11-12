@@ -40,9 +40,8 @@ Future<void> main() async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   var sheets = 3, busy = 1, refuseRegions = false, hasAdf = true;
   final posts = <String>[];
-  var glassLeft = 1;
+  var glassLeft = 1, late404 = 0, lieEmpty = false, hateDuplexTag = false;
   String? posted;
-  var deleted = false;
   server.listen((r) async {
     final path = r.uri.path;
     if (r.method == 'GET' && path == '/eSCL/ScannerCapabilities') {
@@ -56,7 +55,7 @@ Future<void> main() async {
           '</scan:ScannerCapabilities>');
     } else if (r.method == 'GET' && path == '/eSCL/ScannerStatus') {
       r.response.write('<scan:ScannerStatus><pwg:State>Idle</pwg:State>'
-          '${hasAdf ? '<scan:AdfState>${sheets > 0 ? 'ScannerAdfLoaded' : 'ScannerAdfEmpty'}</scan:AdfState>' : ''}</scan:ScannerStatus>');
+          '${hasAdf ? '<scan:AdfState>${sheets > 0 && !lieEmpty ? 'ScannerAdfLoaded' : 'ScannerAdfEmpty'}</scan:AdfState>' : ''}</scan:ScannerStatus>');
     } else if (r.method == 'POST' && path == '/eSCL/ScanJobs') {
       posted = await r.cast<List<int>>().transform(const SystemEncoding().decoder).join();
       posts.add(posted!);
@@ -70,6 +69,8 @@ Future<void> main() async {
     } else if (r.method == 'GET' && path == '/eSCL/ScanJobs/abc/NextDocument') {
       if (busy-- > 0) {
         r.response.statusCode = 503;
+      } else if (late404-- > 0 || (hateDuplexTag && posted!.contains('Duplex'))) {
+        r.response.statusCode = 404;
       } else if (posted!.contains('Platen') ? glassLeft-- > 0 : sheets-- > 0) {
         r.response.headers.contentType = ContentType('image', 'jpeg');
         r.response.add([0xFF, 0xD8, 0xFF, 0xD9]);
@@ -77,7 +78,7 @@ Future<void> main() async {
         r.response.statusCode = 404;
       }
     } else if (r.method == 'DELETE') {
-      deleted = true;
+      // trabalho descartado
     } else {
       r.response.statusCode = 404;
     }
@@ -128,6 +129,24 @@ Future<void> main() async {
   } on ScanError catch (e) {
     check('frente e verso sem suporte avisa', e.message.contains('frente e verso'));
   }
+  // Manias de scanners de verdade no alimentador
+  Future<List<String>> feed() => scanner.scan(ScanSettings()
+    ..driver = 'escl'
+    ..device = dev.id
+    ..source = 'feeder');
+  sheets = 2;
+  late404 = 3;
+  check('404 enquanto puxa a 1ª folha: insiste e digitaliza', (await feed()).length == 2);
+  late404 = 0;
+  sheets = 2;
+  lieEmpty = true;
+  check('scanner diz "vazio" com papel: tenta mesmo assim', (await feed()).length == 2);
+  lieEmpty = false;
+  sheets = 2;
+  hateDuplexTag = true;
+  posts.clear();
+  check('pedido completo não rende página: cai para o mínimo', (await feed()).length == 2 && !posts.last.contains('Duplex'), '(${posts.length} pedidos)');
+  hateDuplexTag = false;
   hasAdf = false;
   try {
     await scanner.scan(ScanSettings()
@@ -160,7 +179,7 @@ Future<void> main() async {
       ..source = 'feeder');
     check('alimentador vazio', false);
   } on ScanError catch (e) {
-    check('alimentador vazio', e.message.contains('Sem papel'), e.message);
+    check('alimentador vazio', e.message.contains('não há papel') && e.details.contains('AdfState: ScannerAdfEmpty'), '\n${e.details}');
   }
   try {
     await scanner.esclAt('127.0.0.1:1');
@@ -168,7 +187,6 @@ Future<void> main() async {
   } on ScanError {
     check('endereço errado recusado', true);
   }
-  check('sem DELETE sem cancelar', !deleted);
   await server.close(force: true);
 
   // ---- de verdade, no que esta máquina tiver

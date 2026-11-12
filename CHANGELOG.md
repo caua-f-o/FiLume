@@ -3,6 +3,15 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.4] — 2026-11-12
+
+### Alterado
+- Faixa de ferramentas do FiLume PDF no estilo do NAPS2: botões grandes com o ícone em cima e o nome embaixo, em grupos separados por uma linha.
+
+### Corrigido
+- Alimentador em scanners de rede que respondiam "sem papel" com papel: o FiLume PDF não confia mais só no aviso do scanner. Ele faz o pedido de qualquer jeito, insiste enquanto o aparelho ainda puxa a primeira folha, consulta o estado do trabalho e tenta formas mais simples do pedido antes de desistir.
+- Quando a digitalização falha, a janela mostra o passo a passo da conversa com o scanner, com botão para copiar o diagnóstico.
+
 ## [1.5.0-beta.3] — 2026-11-12
 
 ### Adicionado

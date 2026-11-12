@@ -545,7 +545,7 @@ class EsclScanner {
 
   /// Pedido de digitalização. Com [caps] (o XML de capacidades do scanner),
   /// resolução, cor, formato e área são ajustados ao que ele aceita.
-  static String settingsXml(ScanSettings s, {required bool feeder, String caps = '', bool regions = true}) {
+  static String settingsXml(ScanSettings s, {required bool feeder, String caps = '', bool regions = true, bool bare = false}) {
     final duplex = feeder && s.duplex;
     final part = (feeder
             ? (duplex ? _section(caps, 'AdfDuplexInputCaps') : null) ?? _section(caps, 'AdfSimplexInputCaps')
@@ -581,10 +581,10 @@ class EsclScanner {
         '<pwg:InputSource>${feeder ? 'Feeder' : 'Platen'}</pwg:InputSource>'
         '<scan:ColorMode>$mode</scan:ColorMode>'
         '<pwg:DocumentFormat>$format</pwg:DocumentFormat>'
-        '${caps.isEmpty || caps.contains('DocumentFormatExt') ? '<scan:DocumentFormatExt>$format</scan:DocumentFormatExt>' : ''}'
+        '${!bare && (caps.isEmpty || caps.contains('DocumentFormatExt')) ? '<scan:DocumentFormatExt>$format</scan:DocumentFormatExt>' : ''}'
         '<scan:XResolution>$dpi</scan:XResolution>'
         '<scan:YResolution>$dpi</scan:YResolution>'
-        '${feeder ? '<scan:Duplex>$duplex</scan:Duplex>' : ''}'
+        '${feeder && (duplex || !bare) ? '<scan:Duplex>$duplex</scan:Duplex>' : ''}'
         '</scan:ScanSettings>';
   }
 
@@ -599,103 +599,176 @@ class EsclScanner {
     }
   }
 
+  /// Estado do trabalho [job] segundo o ScannerStatus: (JobState, motivos).
+  static (String, String) _jobState(String status, Uri job) {
+    final id = job.pathSegments.lastWhere((e) => e.isNotEmpty, orElse: () => '');
+    for (final m in RegExp(r'<(?:\w+:)?JobInfo>([\s\S]*?)</(?:\w+:)?JobInfo>').allMatches(status)) {
+      final block = m.group(1)!;
+      if (id.isNotEmpty && block.contains(id)) {
+        return (_values(block, 'JobState').firstOrNull ?? '', _values(block, 'JobStateReason').join(', '));
+      }
+    }
+    return ('', '');
+  }
+
+  static Future<void> _delete(Uri job) async {
+    final c = _client();
+    try {
+      final req = await c.deleteUrl(job).timeout(const Duration(seconds: 3));
+      await (await req.close().timeout(const Duration(seconds: 3))).drain<void>();
+    } catch (_) {}
+    c.close(force: true);
+  }
+
   static Future<void> scan(ScanSettings s, String dir, void Function(String) onPage, ScanCancel cancel) async {
     final base = s.device;
     final client = _client();
     Uri? job;
     var feeder = false;
+    // Passo a passo da conversa com o scanner; vai junto com o erro, se houver.
+    final log = <String>[];
+    String details() => log.join('\n');
     cancel._stop = () => client.close(force: true);
     try {
       // O que o scanner oferece e como está o alimentador agora.
       final caps = await _get(client, '$base/ScannerCapabilities');
-      final adfState = _values(await _get(client, '$base/ScannerStatus'), 'AdfState').firstOrNull ?? '';
+      var adfState = _values(await _get(client, '$base/ScannerStatus'), 'AdfState').firstOrNull ?? '';
       final hasAdf = caps.isEmpty || _section(caps, 'Adf') != null;
+      log.add('Scanner: ${_values(caps, 'MakeAndModel').firstOrNull ?? '?'} · eSCL ${_values(caps, 'Version').firstOrNull ?? '?'} · '
+          'alimentador: ${caps.isEmpty ? 'capacidades não lidas' : (hasAdf ? 'sim' : 'não')} · '
+          'frente e verso: ${_section(caps, 'AdfDuplexInputCaps') != null ? 'sim' : 'não'} · AdfState: ${adfState.isEmpty ? '(não informa)' : adfState}');
       if (cancel.canceled) return;
-      if (s.source == 'feeder') {
-        if (!hasAdf) throw ScanError('Este scanner não tem alimentador de folhas. Use "Vidro" ou "Automático".');
-        if (adfState == 'ScannerAdfEmpty') throw ScanError('Sem papel no alimentador.');
+      if (s.source == 'feeder' && !hasAdf) {
+        throw ScanError('Este scanner não tem alimentador de folhas. Use "Vidro" ou "Automático".', details());
       }
+      // O estado do alimentador só decide no automático: há scanners que
+      // informam "vazio" com papel, então no modo Alimentador a tentativa é feita de qualquer jeito.
       feeder = s.source == 'feeder' || (s.source == 'auto' && hasAdf && adfState == 'ScannerAdfLoaded');
       if (feeder && s.duplex && caps.isNotEmpty && _section(caps, 'AdfDuplexInputCaps') == null) {
-        throw ScanError('Este scanner não faz frente e verso sozinho. Desmarque "Frente e verso".');
+        throw ScanError('Este scanner não faz frente e verso sozinho. Desmarque "Frente e verso".', details());
       }
-      Future<HttpClientResponse> post(bool regions) async {
-        final req = await client.postUrl(Uri.parse('$base/ScanJobs'));
-        req.headers.contentType = ContentType('text', 'xml', charset: 'utf-8');
-        req.write(settingsXml(s, feeder: feeder, caps: caps, regions: regions));
-        return req.close().timeout(const Duration(seconds: 30));
-      }
-
-      HttpClientResponse created;
-      try {
-        created = await post(true);
-        if (created.statusCode == 409 || created.statusCode == 400) {
-          // Alguns aparelhos recusam a área de leitura explícita: tenta sem ela.
-          await created.drain<void>();
-          created = await post(false);
+      // Formas do pedido, da mais completa à mais simples: cada aparelho tem suas manias.
+      final variants = <(String, bool, bool)>[
+        ('completo', true, false),
+        ('sem área', false, false),
+        if (feeder) ('mínimo', false, true),
+      ];
+      var n = 0;
+      var refused = 0;
+      for (var v = 0; v < variants.length && n == 0 && !cancel.canceled; v++) {
+        final (label, regions, bare) = variants[v];
+        final xml = settingsXml(s, feeder: feeder, caps: caps, regions: regions, bare: bare);
+        if (v > 0 && xml == settingsXml(s, feeder: feeder, caps: caps, regions: variants[v - 1].$2, bare: variants[v - 1].$3)) {
+          continue; // igual ao pedido anterior: não adianta repetir
         }
-      } catch (e) {
-        if (cancel.canceled) return;
-        throw ScanError('Não consegui falar com o scanner de rede. Ele está ligado e na mesma rede?', '$e');
-      }
-      final reply = await created.transform(const Utf8Decoder(allowMalformed: true)).join();
-      final loc = created.headers.value(HttpHeaders.locationHeader);
-      if (created.statusCode != 201 || loc == null) {
-        throw ScanError(
-          switch (created.statusCode) {
-            409 || 400 => 'O scanner recusou essas opções. Tente outra resolução, cor ou origem do papel.',
-            503 => 'O scanner está ocupado. Espere um pouco e tente de novo.',
-            _ => 'O scanner não aceitou o pedido de digitalização.',
-          },
-          'HTTP ${created.statusCode} $reply'.trim(),
-        );
-      }
-      job = Uri.parse('$base/').resolve(loc);
-      final next = Uri.parse('${job.toString().replaceAll(RegExp(r'/+$'), '')}/NextDocument');
-      var n = 0, busy = 0;
-      while (!cancel.canceled && n < 500) {
-        final req = await client.getUrl(next);
-        final res = await req.close().timeout(const Duration(minutes: 3));
-        if (res.statusCode == 200) {
-          n++;
-          busy = 0;
-          final type = res.headers.contentType?.subType ?? 'jpeg';
-          final ext = type.contains('png') ? 'png' : (type.contains('pdf') ? 'pdf' : 'jpg');
-          final path = p.join(dir, 'pagina_${n.toString().padLeft(4, '0')}.$ext');
-          await res.pipe(File(path).openWrite());
-          onPage(path);
-          if (!feeder) break;
-        } else if (res.statusCode == 503 && busy < 90) {
-          // Ainda lendo a folha: espera e pergunta de novo.
-          await res.drain<void>();
-          busy++;
-          await Future<void>.delayed(const Duration(seconds: 1));
-        } else {
-          // 404/410: acabaram as páginas.
-          await res.drain<void>();
-          if (n == 0 && res.statusCode != 404 && res.statusCode != 410) {
-            throw ScanError('O scanner parou antes de entregar a página.', 'HTTP ${res.statusCode}');
+        final HttpClientResponse created;
+        try {
+          final req = await client.postUrl(Uri.parse('$base/ScanJobs'));
+          req.headers.contentType = ContentType('text', 'xml', charset: 'utf-8');
+          req.write(xml);
+          created = await req.close().timeout(const Duration(seconds: 30));
+        } catch (e) {
+          if (cancel.canceled) return;
+          log.add('Pedido $label: sem resposta ($e)');
+          throw ScanError('Não consegui falar com o scanner de rede. Ele está ligado e na mesma rede?', details());
+        }
+        final reply = await created.transform(const Utf8Decoder(allowMalformed: true)).join();
+        final loc = created.headers.value(HttpHeaders.locationHeader);
+        log.add('Pedido $label (${feeder ? 'Feeder' : 'Platen'}): HTTP ${created.statusCode}'
+            '${reply.trim().isEmpty ? '' : ' ${reply.trim().replaceAll(RegExp(r'\s+'), ' ')}'}');
+        if (created.statusCode == 409 || created.statusCode == 400) {
+          refused++;
+          continue;
+        }
+        if (created.statusCode == 503) {
+          throw ScanError('O scanner está ocupado. Espere um pouco e tente de novo.', details());
+        }
+        if (created.statusCode != 201 || loc == null) {
+          throw ScanError('O scanner não aceitou o pedido de digitalização.', details());
+        }
+        final current = job = Uri.parse('$base/').resolve(loc);
+        final next = Uri.parse('${current.toString().replaceAll(RegExp(r'/+$'), '')}/NextDocument');
+        var busy = 0, early = 0;
+        // Quantas vezes insistir quando a 1ª página "não existe" e o scanner não explica.
+        final patience = v == 0 ? 8 : 2;
+        while (!cancel.canceled && n < 500) {
+          final req = await client.getUrl(next);
+          final res = await req.close().timeout(const Duration(minutes: 3));
+          final code = res.statusCode;
+          if (code == 200) {
+            n++;
+            busy = 0;
+            final type = res.headers.contentType?.subType ?? 'jpeg';
+            final ext = type.contains('png') ? 'png' : (type.contains('pdf') ? 'pdf' : 'jpg');
+            final path = p.join(dir, 'pagina_${n.toString().padLeft(4, '0')}.$ext');
+            await res.pipe(File(path).openWrite());
+            onPage(path);
+            if (!feeder) break;
+            continue;
           }
-          if (n == 0 && feeder) throw ScanError('Sem papel no alimentador.');
+          await res.drain<void>();
+          if (code == 503 && busy < 90) {
+            // Ainda lendo a folha: espera e pergunta de novo.
+            busy++;
+            await Future<void>.delayed(const Duration(seconds: 1));
+            continue;
+          }
+          if (n > 0) break; // depois de alguma página, qualquer "não" é o fim do papel
+          // Nenhuma página ainda: antes de desistir, pergunta ao scanner como está o trabalho.
+          // Alguns respondem 404 enquanto ainda puxam a primeira folha.
+          final status = await _get(client, '$base/ScannerStatus');
+          final (state, reasons) = _jobState(status, current);
+          adfState = _values(status, 'AdfState').firstOrNull ?? adfState;
+          if (early == 0) {
+            log.add('1ª página: HTTP $code · trabalho: ${state.isEmpty ? '(não informa)' : state}'
+                '${reasons.isEmpty ? '' : ' ($reasons)'} · AdfState: ${adfState.isEmpty ? '(não informa)' : adfState}');
+          }
+          early++;
+          final working = state == 'Pending' || state == 'Processing' || adfState == 'ScannerAdfProcessing';
+          final over = state == 'Completed' || state == 'Aborted' || state == 'Canceled';
+          if (working && early < 60) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+            continue;
+          }
+          if (!over && early < (adfState == 'ScannerAdfEmpty' ? 3 : patience)) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+            continue;
+          }
+          log.add('Desisti deste pedido depois de $early ${early == 1 ? 'tentativa' : 'tentativas'}.');
           break;
         }
+        if (n == 0 && !cancel.canceled) {
+          await _delete(current);
+          job = null;
+        }
+      }
+      if (n == 0 && !cancel.canceled) {
+        final String msg;
+        if (refused == variants.length) {
+          msg = 'O scanner recusou essas opções. Tente outra resolução, cor ou origem do papel.';
+        } else if (!feeder) {
+          msg = 'O scanner não entregou a página.';
+        } else if (adfState == 'ScannerAdfEmpty') {
+          msg = 'O scanner informa que não há papel no alimentador. Empurre as folhas até o fim, '
+              'até ele reconhecer o papel, e tente de novo.';
+        } else if (adfState.contains('Jam')) {
+          msg = 'Papel preso no alimentador.';
+        } else if (adfState.contains('Open')) {
+          msg = 'A tampa do alimentador está aberta.';
+        } else {
+          msg = 'O scanner não entregou nenhuma página pelo alimentador.';
+        }
+        throw ScanError(msg, details());
       }
     } on ScanError {
       rethrow;
     } catch (e) {
       if (cancel.canceled) return;
-      throw ScanError('A conexão com o scanner caiu durante a digitalização.', '$e');
+      log.add('$e');
+      throw ScanError('A conexão com o scanner caiu durante a digitalização.', details());
     } finally {
       cancel._stop = null;
-      if (cancel.canceled && job != null) {
-        // Avisa o scanner para largar o trabalho.
-        final c = _client();
-        try {
-          final req = await c.deleteUrl(job).timeout(const Duration(seconds: 3));
-          await (await req.close().timeout(const Duration(seconds: 3))).drain<void>();
-        } catch (_) {}
-        c.close(force: true);
-      }
+      if (cancel.canceled && job != null) await _delete(job); // avisa o scanner para largar o trabalho
       client.close(force: true);
     }
   }

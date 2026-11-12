@@ -462,7 +462,8 @@ class _RailItem extends StatelessWidget {
 
 // ------------------------------------------------------- faixa de ferramentas
 
-/// Faixa fixa: não muda ao trocar de ferramenta.
+/// Faixa fixa: não muda ao trocar de ferramenta. Botões grandes com o ícone
+/// em cima e o nome embaixo, em grupos separados por uma linha.
 class _Toolbar extends StatelessWidget {
   const _Toolbar({required this.state, required this.onAdd});
   final AppState state;
@@ -480,95 +481,166 @@ class _Toolbar extends StatelessWidget {
       state.touch();
     }
 
-    Widget icon(IconData i, String tip, VoidCallback? onTap) =>
-        IconButton.filledTonal(tooltip: tip, onPressed: onTap, icon: Icon(i, size: 20));
-    Widget group(List<Widget> children) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < children.length; i++) ...[if (i > 0) const SizedBox(width: 6), children[i]],
-          ],
-        );
     final docs = state.docs.ready.where(mesaAccepts).toList();
+    final ocr = state.prefs.ocr;
+    Widget sep() => Container(
+          width: 1,
+          height: 44,
+          margin: const EdgeInsets.symmetric(horizontal: 8),
+          color: cs.outlineVariant,
+        );
     return Panel(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
-        runSpacing: 8,
-        children: [
-          group([
-            FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add, size: 18), label: const Text('Adicionar')),
-            FilledButton.tonalIcon(
-              onPressed: () => OrganizerWorkspace.scan(context, state),
-              icon: const Icon(Icons.scanner_outlined, size: 18),
-              label: const Text('Digitalizar'),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _ToolButton(icon: Icons.add_circle_outline, label: 'Adicionar', tip: 'Adicionar PDFs e imagens', onTap: onAdd),
+            _ToolButton(
+              icon: Icons.scanner_outlined,
+              label: 'Digitalizar',
+              tip: 'Digitalizar pelo scanner',
+              onTap: () => OrganizerWorkspace.scan(context, state),
             ),
-            Tooltip(
-              message: 'OCR: ao salvar, digitalizações e fotos ganham texto pesquisável\n'
+            _ToolButton(
+              icon: Icons.text_fields,
+              label: 'OCR',
+              active: ocr,
+              tip: 'OCR ${ocr ? 'ligado' : 'desligado'}: ao salvar, digitalizações e fotos ganham texto pesquisável\n'
                   '(dá para buscar, selecionar e copiar). A aparência não muda.',
-              child: FilterChip(
-                avatar: state.prefs.ocr ? null : const Icon(Icons.text_fields, size: 18),
-                label: const Text('OCR'),
-                selected: state.prefs.ocr,
-                onSelected: (v) {
-                  state.prefs.update(() => state.prefs.ocr = v);
-                  state.touch();
-                },
-              ),
+              onTap: () {
+                state.prefs.update(() => state.prefs.ocr = !ocr);
+                state.touch();
+              },
             ),
-          ]),
-          group([
-            icon(Icons.rotate_left, 'Girar à esquerda ($scope)', none ? null : () => act(() => o.rotate(o.targets, 270))),
-            icon(Icons.rotate_right, 'Girar à direita ($scope)', none ? null : () => act(() => o.rotate(o.targets, 90))),
-            icon(Icons.flip_camera_android_outlined, 'Inverter 180° ($scope)',
-                none ? null : () => act(() => o.rotate(o.targets, 180))),
-            icon(
-              Icons.straighten,
-              'Endireitar imagens e digitalizações ($scope)',
-              o.targets.any((r) => r.isImage) ? () => straighten(context, state, o.targets) : null,
+            sep(),
+            _ToolButton(
+              icon: Icons.rotate_left,
+              label: 'Esquerda',
+              tip: 'Girar à esquerda ($scope)',
+              onTap: none ? null : () => act(() => o.rotate(o.targets, 270)),
+            ),
+            _ToolButton(
+              icon: Icons.rotate_right,
+              label: 'Direita',
+              tip: 'Girar à direita ($scope)',
+              onTap: none ? null : () => act(() => o.rotate(o.targets, 90)),
+            ),
+            _ToolButton(
+              icon: Icons.flip_camera_android_outlined,
+              label: 'Inverter',
+              tip: 'Inverter 180° ($scope)',
+              onTap: none ? null : () => act(() => o.rotate(o.targets, 180)),
+            ),
+            _ToolButton(
+              icon: Icons.straighten,
+              label: 'Endireitar',
+              tip: 'Endireitar imagens e digitalizações ($scope)',
+              onTap: o.targets.any((r) => r.isImage) ? () => straighten(context, state, o.targets) : null,
             ),
             PopupMenuButton<PageFit>(
-              tooltip: 'Tamanho da página (imagens e digitalizações)',
+              tooltip: 'Tamanho da página para imagens e digitalizações\nAgora: ${state.pdfConvert.fit.label}',
               onSelected: (f) => act(() => state.pdfConvert.fit = f),
               itemBuilder: (context) => [
                 for (final f in PageFit.values)
                   CheckedPopupMenuItem(value: f, checked: state.pdfConvert.fit == f, child: Text(f.label)),
               ],
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(color: cs.secondaryContainer, borderRadius: BorderRadius.circular(20)),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.aspect_ratio, size: 18, color: cs.onSecondaryContainer),
-                    const SizedBox(width: 8),
-                    Text(state.pdfConvert.fit.label,
-                        style: TextStyle(color: cs.onSecondaryContainer, fontWeight: FontWeight.w600)),
-                    Icon(Icons.arrow_drop_down, color: cs.onSecondaryContainer),
-                  ],
-                ),
-              ),
+              child: const _ToolButton(icon: Icons.aspect_ratio, label: 'Tamanho', dropdown: true, enabled: true),
             ),
-            icon(
-              Icons.delete_outline,
-              n == 0 ? 'Excluir (selecione páginas antes)' : 'Excluir ${n == 1 ? 'a página selecionada' : 'as $n selecionadas'}',
-              n == 0 ? null : () => act(() => o.remove(o.selected.toList())),
+            sep(),
+            _ToolButton(
+              icon: Icons.delete_outline,
+              label: 'Excluir',
+              danger: true,
+              tip: n == 0 ? 'Excluir (selecione páginas antes)' : 'Excluir ${n == 1 ? 'a página selecionada' : 'as $n selecionadas'}',
+              onTap: n == 0 ? null : () => act(() => o.remove(o.selected.toList())),
             ),
-          ]),
-          group([
-            icon(
-              n == 0 ? Icons.select_all : Icons.deselect,
-              n == 0 ? 'Selecionar tudo' : 'Limpar seleção',
-              none ? null : () => act(() => n == 0 ? o.selected.addAll(o.pages) : o.selected.clear()),
+            _ToolButton(
+              icon: n == 0 ? Icons.select_all : Icons.deselect,
+              label: n == 0 ? 'Selecionar' : 'Limpar',
+              tip: n == 0 ? 'Selecionar tudo' : 'Limpar seleção',
+              onTap: none ? null : () => act(() => n == 0 ? o.selected.addAll(o.pages) : o.selected.clear()),
             ),
-            icon(Icons.restore, 'Restaurar a bandeja como os arquivos vieram',
-                docs.isEmpty ? null : () => act(() => o.reset(docs))),
-          ]),
+            _ToolButton(
+              icon: Icons.restore,
+              label: 'Restaurar',
+              tip: 'Restaurar a bandeja como os arquivos vieram',
+              onTap: docs.isEmpty ? null : () => act(() => o.reset(docs)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Botão da faixa: ícone grande em cima, nome embaixo.
+class _ToolButton extends StatelessWidget {
+  const _ToolButton({
+    required this.icon,
+    required this.label,
+    this.tip,
+    this.onTap,
+    this.active = false,
+    this.danger = false,
+    this.dropdown = false,
+    this.enabled,
+  });
+  final IconData icon;
+  final String label;
+  final String? tip;
+  final VoidCallback? onTap;
+
+  /// Ligado (para botões de liga/desliga, como o OCR).
+  final bool active;
+  final bool danger;
+
+  /// Mostra a setinha de menu ao lado do ícone.
+  final bool dropdown;
+
+  /// Para quando o toque é tratado por quem envolve o botão (menu).
+  final bool? enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final on = enabled ?? onTap != null;
+    final fg = !on ? cs.onSurface.withValues(alpha: 0.38) : cs.onSurface;
+    final tint = !on ? fg : (danger ? cs.error : cs.primary);
+    final body = AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      constraints: const BoxConstraints(minWidth: 68),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? cs.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 28, color: active ? cs.onPrimaryContainer : tint),
+              if (dropdown) Icon(Icons.arrow_drop_down, size: 18, color: fg),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? cs.onPrimaryContainer : fg),
+          ),
         ],
       ),
     );
+    if (enabled != null) return body;
+    final button = Semantics(
+      button: true,
+      enabled: on,
+      toggled: active ? true : null,
+      child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(14), child: body),
+    );
+    return tip == null ? button : Tooltip(message: tip!, child: button);
   }
 }
 

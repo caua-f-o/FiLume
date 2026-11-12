@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../core/deskew.dart';
@@ -928,7 +929,20 @@ class _ScanDialogState extends State<_ScanDialog> {
               ],
               if (_details != null && _details!.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                SelectableText(_details!, maxLines: 6, style: _muted(context)),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 130),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: cs.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+                  child: SingleChildScrollView(child: SelectableText(_details!, style: _muted(context))),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => Clipboard.setData(ClipboardData(text: '${_error ?? ''}\n${_details!}')),
+                    icon: const Icon(Icons.copy, size: 16),
+                    label: const Text('Copiar diagnóstico'),
+                  ),
+                ),
               ],
             ],
           ),
