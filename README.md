@@ -62,12 +62,13 @@ Aplicativo dedicado (`FiLume PDF.exe`, na mesma pasta do FiLume). Tudo gira em t
 | Ferramenta | O que faz |
 | --- | --- |
 | **Organizar** | Salva a bandeja como um PDF só (é também como se une PDFs e se transforma imagens em PDF). |
-| **Comprimir** | Quatro níveis, com opção de tons de cinza. PDFs escaneados chegam a encolher mais de 90%. |
+| **Comprimir** | Quatro níveis, com opção de tons de cinza. PDFs escaneados chegam a encolher mais de 90%. No modo avançado: tamanho máximo em MB, resolução e qualidade das imagens, e preto e branco puro para texto escaneado. |
 | **Dividir** | A cada N páginas, por tamanho máximo (anexos de e-mail), por intervalos ou página a página. |
 | **Imagens** | Exporta cada página como JPG ou PNG em 72, 150 ou 300 dpi. |
 | **Senha** | Protege com AES-256 ou remove a senha (sabendo a atual). |
+| **Comparar** | Compara duas versões de um PDF (ou duas digitalizações): acha páginas inseridas e removidas, marca o que mudou em cada página, lista as palavras alteradas e gera um relatório em PDF. |
 
-Ao salvar, uma caixa pede o nome e a pasta, com atalhos para as pastas guardadas nos Ajustes. Com o **OCR** ligado, digitalizações e fotos saem com texto pesquisável (reconhecimento do próprio Windows 10/11).
+Ao salvar, uma caixa pede o nome e a pasta, com atalhos para as pastas guardadas nos Ajustes. PDFs com **assinatura digital** são identificados: o app avisa antes de qualquer alteração que a invalide e pode anexar o original assinado ao novo arquivo. Com o **OCR** ligado, digitalizações e fotos saem com texto pesquisável (reconhecimento do próprio Windows 10/11).
 
 ### 🖼️ Imagem
 

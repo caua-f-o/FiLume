@@ -3,6 +3,18 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.6] — 2026-11-12
+
+### Adicionado
+- **Assinatura digital** no FiLume PDF: PDFs assinados são identificados ao entrar na bandeja, com quem assinou, data, motivo e local (botão de detalhes no painel).
+- Salvar em Organizar sem mexer nas páginas gera uma cópia idêntica, com a assinatura valendo.
+- **Comparador de PDFs** (ferramenta Comparar): emparelha as páginas dos dois arquivos, achando as inseridas e as removidas; marca na página o que mudou; e lista as palavras que saíram e as que entraram. Funciona com PDFs digitais, digitalizações e fotos (com folga para ruído, brilho e folha fora do lugar; em páginas sem texto, lê por OCR). Visão lado a lado com zoom sincronizado e relatório em PDF.
+- **Compressão avançada** no Comprimir (seção "Avançado", sem ferramenta nova): tamanho máximo em MB (o compressor acha sozinho a melhor qualidade que cabe), resolução e qualidade das imagens à escolha, e preto e branco puro (1 bit) para documentos de texto escaneados. Toda compressão ganhou ainda uma passada final sem perda na estrutura do PDF.
+- Qualquer operação que invalidaria a assinatura avisa antes e oferece anexar o original assinado dentro do novo PDF, para quem receber poder conferir.
+
+### Corrigido
+- Faixa de ferramentas em janela estreita (monitor em pé): os botões encolhem e passam para a linha de baixo quando não cabem, em vez de ficarem escondidos.
+
 ## [1.5.0-beta.5] — 2026-11-12
 
 ### Alterado

@@ -14,6 +14,7 @@ import '../core/launch.dart';
 import '../core/ocr.dart';
 import '../core/pdf.dart';
 import '../core/prefs.dart';
+import '../core/signature.dart';
 import '../core/state.dart';
 import '../ui/common.dart';
 import '../ui/modules.dart' show mesaAccepts;
@@ -23,6 +24,7 @@ import '../ui/process_button.dart';
 import '../ui/settings_page.dart';
 import '../ui/theme.dart';
 import '../ui/title_bar.dart';
+import 'compare_view.dart';
 import 'save_dialog.dart';
 
 /// FiLume PDF: o app dedicado de PDF. Mesmo programa do FiLume, aberto pelo
@@ -110,6 +112,9 @@ const _suffix = {
   TrayOp.protect: '_protegido',
 };
 
+/// Índice do comparador na barra lateral (não usa a bandeja).
+const _compareTool = 5;
+
 class PdfShell extends StatefulWidget {
   const PdfShell({super.key, required this.state});
   final AppState state;
@@ -121,9 +126,16 @@ class PdfShell extends StatefulWidget {
 class _PdfShellState extends State<PdfShell> {
   /// Ferramenta aberta; -1 = ajustes.
   int _tool = 0;
+  late final CompareSession _compare = CompareSession(widget.state);
   bool _dragging = false;
 
   AppState get state => widget.state;
+
+  @override
+  void dispose() {
+    _compare.dispose();
+    super.dispose();
+  }
 
   void _snack(String text) {
     ScaffoldMessenger.of(context)
@@ -183,6 +195,15 @@ class _PdfShellState extends State<PdfShell> {
     final pages = state.organizer.pages;
     if (pages.isEmpty) return _snack('A bandeja está vazia: adicione PDFs ou imagens, ou digitalize.');
     if (pages.any((r) => r.busy)) return _snack('Espere o "endireitar" terminar.');
+    // PDF assinado: avisa antes de qualquer coisa que invalide a assinatura.
+    final signed = signedDocsIn(pages);
+    final keeps = trayKeepsSignature(pages, op);
+    var attach = false;
+    if (signed.isNotEmpty && !keeps) {
+      final answer = await _confirmSigned(signed, op);
+      if (answer == null || !mounted) return;
+      attach = answer;
+    }
     final (name, dir) = _suggest(pages.first.doc.path, op);
     final choice = await showSaveDialog(
       context,
@@ -208,8 +229,66 @@ class _PdfShellState extends State<PdfShell> {
         convert: state.pdfConvert,
         password: state.pdfPassword.password,
         ocr: state.prefs.ocr ? WindowsOcr.recognize : null,
+        attachSigned: attach,
       )..module = 'pdf',
     ]);
+  }
+
+  /// Aviso de assinatura. Devolve null (cancelou) ou se é para anexar o original.
+  Future<bool?> _confirmSigned(List<MediaInfo> signed, TrayOp op) {
+    var attach = !op.folder;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) {
+          final t = Theme.of(context);
+          return AlertDialog(
+            icon: const Icon(Icons.verified_outlined),
+            title: const Text('Este PDF tem assinatura digital'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final d in signed) ...[
+                      Text(p.basename(d.path), style: t.textTheme.titleSmall),
+                      for (final s in d.signatures)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8, top: 2),
+                          child: Text('• ${s.summary}', style: t.textTheme.bodySmall),
+                        ),
+                      const SizedBox(height: 10),
+                    ],
+                    Text(
+                      'Uma assinatura digital só vale para o arquivo exatamente como foi assinado. '
+                      '"${op.label}" gera um arquivo diferente, então a assinatura não vai valer na cópia. '
+                      'O original não é alterado.'
+                      '${op == TrayOp.save ? '' : '\n\nPara uma cópia com a assinatura valendo, use Organizar sem mudar as páginas.'}',
+                    ),
+                    if (!op.folder)
+                      CheckboxListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.only(top: 8),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: const Text('Anexar o original assinado dentro do novo PDF'),
+                        subtitle: const Text('Quem receber pode abrir o anexo e conferir a assinatura.'),
+                        value: attach,
+                        onChanged: (v) => setLocal(() => attach = v ?? false),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+              FilledButton(onPressed: () => Navigator.pop(context, attach), child: const Text('Continuar')),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -238,7 +317,9 @@ class _PdfShellState extends State<PdfShell> {
                   children: [
                     _Rail(current: _tool, onGo: (i) => setState(() => _tool = i)),
                     Expanded(
-                      child: _tool < 0
+                      child: _tool == _compareTool
+                          ? CompareView(state: state, session: _compare)
+                          : _tool < 0
                           ? SettingsPage(prefs: state.prefs, mainApp: false, extra: _FoldersSection(prefs: state.prefs))
                           : ListenableBuilder(listenable: state, builder: (context, _) => _workArea(context)),
                     ),
@@ -353,8 +434,9 @@ class _PdfShellState extends State<PdfShell> {
               },
             ),
           ),
+          _Signed(state: state, op: tool.op),
           _Notices(state: state, onPassword: () => setState(() => _tool = 4)),
-          _JobStatus(queue: state.queue),
+          JobStatusCard(queue: state.queue),
           const SizedBox(height: 10),
           ProcessButton(queue: state.queue, label: removing ? 'Remover senha' : tool.op.label, onPressed: _save),
         ],
@@ -388,6 +470,12 @@ class _Rail extends StatelessWidget {
                       selected: current == i,
                       onTap: () => onGo(i),
                     ),
+                  _RailItem(
+                    icon: Icons.difference_outlined,
+                    label: 'Comparar',
+                    selected: current == _compareTool,
+                    onTap: () => onGo(_compareTool),
+                  ),
                 ],
               ),
             ),
@@ -489,20 +577,25 @@ class _Toolbar extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 8),
           color: cs.outlineVariant,
         );
+    // Janela estreita (monitor em pé, por exemplo): os botões encolhem e, se
+    // ainda assim não couberem, passam para a linha de baixo. Nada fica escondido.
     return Panel(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final dense = box.maxWidth < 880;
+          return Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          runSpacing: 4,
           children: [
-            _ToolButton(icon: Icons.add_circle_outline, label: 'Adicionar', tip: 'Adicionar PDFs e imagens', onTap: onAdd),
-            _ToolButton(
+            _ToolButton(dense: dense, icon: Icons.add_circle_outline, label: 'Adicionar', tip: 'Adicionar PDFs e imagens', onTap: onAdd),
+            _ToolButton(dense: dense, 
               icon: Icons.scanner_outlined,
               label: 'Digitalizar',
               tip: 'Digitalizar pelo scanner',
               onTap: () => OrganizerWorkspace.scan(context, state),
             ),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: Icons.text_fields,
               label: 'OCR',
               active: ocr,
@@ -514,25 +607,25 @@ class _Toolbar extends StatelessWidget {
               },
             ),
             sep(),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: Icons.rotate_left,
               label: 'Esquerda',
               tip: 'Girar à esquerda ($scope)',
               onTap: none ? null : () => act(() => o.rotate(o.targets, 270)),
             ),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: Icons.rotate_right,
               label: 'Direita',
               tip: 'Girar à direita ($scope)',
               onTap: none ? null : () => act(() => o.rotate(o.targets, 90)),
             ),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: Icons.flip_camera_android_outlined,
               label: 'Inverter',
               tip: 'Inverter 180° ($scope)',
               onTap: none ? null : () => act(() => o.rotate(o.targets, 180)),
             ),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: Icons.straighten,
               label: 'Endireitar',
               tip: 'Endireitar imagens e digitalizações ($scope)',
@@ -545,30 +638,31 @@ class _Toolbar extends StatelessWidget {
                 for (final f in PageFit.values)
                   CheckedPopupMenuItem(value: f, checked: state.pdfConvert.fit == f, child: Text(f.label)),
               ],
-              child: const _ToolButton(icon: Icons.aspect_ratio, label: 'Tamanho', dropdown: true, enabled: true),
+              child: _ToolButton(dense: dense, icon: Icons.aspect_ratio, label: 'Tamanho', dropdown: true, enabled: true),
             ),
             sep(),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: Icons.delete_outline,
               label: 'Excluir',
               danger: true,
               tip: n == 0 ? 'Excluir (selecione páginas antes)' : 'Excluir ${n == 1 ? 'a página selecionada' : 'as $n selecionadas'}',
               onTap: n == 0 ? null : () => act(() => o.remove(o.selected.toList())),
             ),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: n == 0 ? Icons.select_all : Icons.deselect,
               label: n == 0 ? 'Selecionar' : 'Limpar',
               tip: n == 0 ? 'Selecionar tudo' : 'Limpar seleção',
               onTap: none ? null : () => act(() => n == 0 ? o.selected.addAll(o.pages) : o.selected.clear()),
             ),
-            _ToolButton(
+            _ToolButton(dense: dense, 
               icon: Icons.restore,
               label: 'Restaurar',
               tip: 'Restaurar a bandeja como os arquivos vieram',
               onTap: docs.isEmpty ? null : () => act(() => o.reset(docs)),
             ),
           ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -585,7 +679,11 @@ class _ToolButton extends StatelessWidget {
     this.danger = false,
     this.dropdown = false,
     this.enabled,
+    this.dense = false,
   });
+
+  /// Versão mais estreita, para janelas apertadas.
+  final bool dense;
   final IconData icon;
   final String label;
   final String? tip;
@@ -609,8 +707,8 @@ class _ToolButton extends StatelessWidget {
     final tint = !on ? fg : (danger ? cs.error : cs.primary);
     final body = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
-      constraints: const BoxConstraints(minWidth: 68),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      constraints: BoxConstraints(minWidth: dense ? 50 : 68),
+      padding: EdgeInsets.symmetric(horizontal: dense ? 3 : 8, vertical: dense ? 4 : 6),
       decoration: BoxDecoration(
         color: active ? cs.primaryContainer : Colors.transparent,
         borderRadius: BorderRadius.circular(14),
@@ -621,14 +719,14 @@ class _ToolButton extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 28, color: active ? cs.onPrimaryContainer : tint),
+              Icon(icon, size: dense ? 24 : 28, color: active ? cs.onPrimaryContainer : tint),
               if (dropdown) Icon(Icons.arrow_drop_down, size: 18, color: fg),
             ],
           ),
           const SizedBox(height: 3),
           Text(
             label,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? cs.onPrimaryContainer : fg),
+            style: TextStyle(fontSize: dense ? 11 : 12, fontWeight: FontWeight.w600, color: active ? cs.onPrimaryContainer : fg),
           ),
         ],
       ),
@@ -695,6 +793,96 @@ class _OrganizeOptions extends StatelessWidget {
   }
 }
 
+/// PDFs assinados que estão na bandeja, com quem assinou.
+class _Signed extends StatelessWidget {
+  const _Signed({required this.state, required this.op});
+  final AppState state;
+  final TrayOp op;
+
+  void _details(BuildContext context, List<MediaInfo> docs) => showDialog<void>(
+        context: context,
+        builder: (context) {
+          final t = Theme.of(context);
+          return AlertDialog(
+            icon: const Icon(Icons.verified_outlined),
+            title: const Text('Assinaturas digitais'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final d in docs) ...[
+                      Text(p.basename(d.path), style: t.textTheme.titleSmall),
+                      for (final PdfSignature s in d.signatures)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8, top: 6),
+                          child: Text(
+                            [
+                              s.signer ?? 'Assinante não identificado',
+                              if (s.date != null) 'Data: ${s.date}',
+                              if (s.reason != null) 'Motivo: ${s.reason}',
+                              if (s.location != null) 'Local: ${s.location}',
+                              if (s.certification) 'Assinatura de certificação (do autor do documento)',
+                              if (!s.coversWholeFile) 'O arquivo recebeu acréscimos depois desta assinatura',
+                            ].join('\n'),
+                            style: t.textTheme.bodySmall,
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+                    Text(
+                      'O FiLume PDF identifica as assinaturas, mas não confere se são válidas. '
+                      'Para isso, use um validador (o do gov.br, por exemplo) no arquivo original.',
+                      style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar'))],
+          );
+        },
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = state.organizer.pages;
+    final docs = signedDocsIn(pages);
+    if (docs.isEmpty) return const SizedBox.shrink();
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+    final keeps = trayKeepsSignature(pages, op);
+    final who = docs.first.signatures.first.signer;
+    final count = docs.fold<int>(0, (n, d) => n + d.signatures.length);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(color: cs.tertiaryContainer, borderRadius: BorderRadius.circular(16)),
+      child: Row(
+        children: [
+          Icon(Icons.verified_outlined, size: 20, color: cs.onTertiaryContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${count == 1 ? 'Assinado digitalmente' : '$count assinaturas digitais'}'
+              '${who == null ? '' : count == 1 ? ' por $who' : ' ($who e mais)'}.\n'
+              '${keeps ? 'Salvando assim, a assinatura continua valendo.' : 'Esta operação gera uma cópia sem assinatura válida.'}',
+              style: t.textTheme.bodySmall?.copyWith(color: cs.onTertiaryContainer),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Ver assinaturas',
+            onPressed: () => _details(context, docs),
+            icon: Icon(Icons.info_outline, size: 20, color: cs.onTertiaryContainer),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Arquivos que ficaram fora da bandeja (protegidos por senha ou ilegíveis).
 class _Notices extends StatelessWidget {
   const _Notices({required this.state, required this.onPassword});
@@ -750,8 +938,8 @@ class _Notices extends StatelessWidget {
 }
 
 /// O último trabalho: andamento, resultado (com "abrir pasta") ou o erro.
-class _JobStatus extends StatelessWidget {
-  const _JobStatus({required this.queue});
+class JobStatusCard extends StatelessWidget {
+  const JobStatusCard({required this.queue});
   final JobQueue queue;
 
   @override

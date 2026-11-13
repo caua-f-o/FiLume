@@ -18,6 +18,12 @@ class PdfCompressView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = state.pdfCompress;
+    final hasTarget = s.targetMb != null;
+    void set(VoidCallback f) {
+      f();
+      state.touch();
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -29,18 +35,20 @@ class PdfCompressView extends StatelessWidget {
             for (final l in PdfLevel.values)
               ChoiceChip(
                 label: Text(l.label),
-                selected: s.level == l,
+                selected: !hasTarget && s.level == l,
                 showCheckmark: false,
-                onSelected: (_) {
-                  s.level = l;
-                  state.touch();
-                },
+                onSelected: hasTarget ? null : (_) => set(() => s.level = l),
               ),
           ],
         ),
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: Text('${s.level.hint} Imagens reduzidas para ${s.level.dpi} dpi.', style: _muted(context)),
+          child: Text(
+            hasTarget
+                ? 'Com tamanho máximo definido, o nível é escolhido sozinho: a melhor qualidade que couber.'
+                : '${s.level.hint} Imagens reduzidas para ${s.dpi ?? s.level.dpi} dpi.',
+            style: _muted(context),
+          ),
         ),
         const SizedBox(height: 6),
         SwitchListTile(
@@ -48,11 +56,72 @@ class PdfCompressView extends StatelessWidget {
           dense: true,
           title: const Text('Converter para tons de cinza'),
           subtitle: const Text('Reduz mais em documentos coloridos que não precisam de cor.'),
-          value: s.grayscale,
-          onChanged: (v) {
-            s.grayscale = v;
-            state.touch();
-          },
+          value: s.grayscale && !s.mono,
+          onChanged: s.mono ? null : (v) => set(() => s.grayscale = v),
+        ),
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            initiallyExpanded: s.advanced,
+            leading: const Icon(Icons.tune, size: 20),
+            title: Text('Avançado${s.advanced ? ' · em uso' : ''}'),
+            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TargetField(
+                value: s.targetMb,
+                onChanged: (v) => set(() => s.targetMb = v),
+              ),
+              const SizedBox(height: 4),
+              Text('Para anexos com limite (e-mail, sistemas). Deixe vazio para usar o nível.', style: _muted(context)),
+              const SizedBox(height: 14),
+              Choice<int>(
+                key: ValueKey('dpi-${s.dpi}'),
+                label: hasTarget ? 'Resolução máxima das imagens' : 'Resolução das imagens',
+                value: s.dpi ?? 0,
+                options: const {0: 'Automática', 300: '300 dpi', 200: '200 dpi', 150: '150 dpi', 100: '100 dpi', 72: '72 dpi'},
+                onChanged: (v) => set(() => s.dpi = v == 0 ? null : v),
+              ),
+              const SizedBox(height: 12),
+              if (!s.mono && !hasTarget) ...[
+                Choice<int>(
+                  key: ValueKey('q-${s.quality}'),
+                  label: 'Qualidade das imagens (JPEG)',
+                  value: s.quality ?? 0,
+                  options: const {0: 'Automática', 90: 'Muito alta', 75: 'Alta', 60: 'Média', 45: 'Baixa', 25: 'Mínima'},
+                  onChanged: (v) => set(() => s.quality = v == 0 ? null : v),
+                ),
+                const SizedBox(height: 4),
+              ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Preto e branco puro (1 bit)'),
+                subtitle: const Text(
+                  'Para documentos de texto escaneados: fica minúsculo e nítido. Fotos e cores se perdem, '
+                  'e as páginas viram imagem (com o OCR ligado, o texto continua pesquisável).',
+                ),
+                value: s.mono,
+                onChanged: (v) => set(() => s.mono = v),
+              ),
+              if (s.advanced)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => set(() {
+                      s
+                        ..targetMb = null
+                        ..dpi = null
+                        ..quality = null
+                        ..mono = false;
+                    }),
+                    icon: const Icon(Icons.restart_alt, size: 18),
+                    label: const Text('Limpar opções avançadas'),
+                  ),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 8),
         const InfoBox(
@@ -63,6 +132,46 @@ class PdfCompressView extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Campo "Tamanho máximo (MB)"; vazio = sem alvo.
+class _TargetField extends StatefulWidget {
+  const _TargetField({required this.value, required this.onChanged});
+  final double? value;
+  final ValueChanged<double?> onChanged;
+
+  @override
+  State<_TargetField> createState() => _TargetFieldState();
+}
+
+class _TargetFieldState extends State<_TargetField> {
+  late final _c = TextEditingController(text: _fmt(widget.value));
+
+  static String _fmt(double? v) => v == null ? '' : (v == v.roundToDouble() ? '${v.round()}' : '$v'.replaceAll('.', ','));
+
+  @override
+  void didUpdateWidget(_TargetField old) {
+    super.didUpdateWidget(old);
+    // Limpo por fora ("Limpar opções avançadas").
+    if (widget.value == null && _c.text.isNotEmpty && old.value != null) _c.clear();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextField(
+        controller: _c,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(isDense: true, labelText: 'Tamanho máximo', suffixText: 'MB', hintText: 'Ex.: 5'),
+        onChanged: (t) {
+          final v = double.tryParse(t.trim().replaceAll(',', '.'));
+          widget.onChanged(v != null && v > 0 ? v : null);
+        },
+      );
 }
 
 class PdfSplitView extends StatelessWidget {

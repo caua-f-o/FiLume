@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'signature.dart';
+
 const _utf8 = Utf8Codec(allowMalformed: true);
 
 class FfError implements Exception {
@@ -44,6 +46,9 @@ class MediaInfo {
     this.pages = 0,
     this.encrypted = false,
   });
+
+  /// Assinaturas digitais (só PDFs).
+  List<PdfSignature> signatures = const [];
 
   /// Um PDF (lido pelo qpdf, não pelo ffprobe).
   MediaInfo.pdf({required this.path, required this.sizeBytes, required this.pages, this.encrypted = false})

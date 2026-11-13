@@ -84,6 +84,9 @@ jobs:
           dart run tool/image_test.dart smoke/img
           dart run tool/scan_test.dart
           dart run tool/ocr_test.dart
+          dart run tool/signature_test.dart
+          dart run tool/compress_test.dart
+          dart run tool/compare_test.dart
 
       - name: Empacotar
         shell: pwsh

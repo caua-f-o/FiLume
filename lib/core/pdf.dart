@@ -8,6 +8,7 @@ import 'ffmpeg.dart';
 import 'format.dart';
 import 'job.dart';
 import 'ocr.dart';
+import 'signature.dart';
 
 /// Motores de PDF: qpdf (estrutura: dividir, unir, organizar, senha) e
 /// Ghostscript (comprimir e desenhar páginas).
@@ -59,7 +60,13 @@ class PdfTools {
     final r = await Process.run(qpdf, ['--show-npages', path]);
     if (r.exitCode == 0 || r.exitCode == 3) {
       final n = int.tryParse(r.stdout.toString().trim().split('\n').last.trim());
-      if (n != null) return MediaInfo.pdf(path: path, sizeBytes: size, pages: n);
+      if (n != null) {
+        final info = MediaInfo.pdf(path: path, sizeBytes: size, pages: n);
+        try {
+          info.signatures = await readSignatures(qpdf, path);
+        } catch (_) {}
+        return info;
+      }
     }
     final err = r.stderr.toString().toLowerCase();
     if (err.contains('password')) {
@@ -163,11 +170,121 @@ class PdfCompressSettings {
   PdfLevel level = PdfLevel.balanced;
   bool grayscale = false;
 
+  // ---- avançado
+  /// Tamanho máximo do resultado, em MB (null = sem alvo). Com alvo, o
+  /// compressor procura sozinho a melhor qualidade que cabe nele.
+  double? targetMb;
+
+  /// Resolução das imagens (null = a do nível).
+  int? dpi;
+
+  /// Qualidade JPEG das imagens, 1 a 100 (null = automática).
+  int? quality;
+
+  /// Preto e branco puro (1 bit): cada página vira uma imagem de fax.
+  /// Encolhe muito documentos escaneados de texto; ruim para fotos.
+  bool mono = false;
+
+  bool get advanced => targetMb != null || dpi != null || quality != null || mono;
+
   PdfCompressSettings copy() => PdfCompressSettings()
     ..level = level
-    ..grayscale = grayscale;
+    ..grayscale = grayscale
+    ..targetMb = targetMb
+    ..dpi = dpi
+    ..quality = quality
+    ..mono = mono;
 
-  String describe() => 'nível ${level.label.toLowerCase()}${grayscale ? ' · tons de cinza' : ''}';
+  String describe() => [
+        if (targetMb != null) 'até ${fmtBytes((targetMb! * 1024 * 1024).round())}' else 'nível ${level.label.toLowerCase()}',
+        if (mono) 'preto e branco' else if (grayscale) 'tons de cinza',
+        if (dpi != null) '$dpi dpi',
+        if (quality != null && !mono) 'qualidade $quality',
+      ].join(' · ');
+}
+
+/// Degraus de (resolução, qualidade) que o tamanho-alvo percorre, do melhor ao menor.
+const _ladder = [
+  (300, 85), (200, 80), (150, 75), (150, 60), (120, 55), (100, 50), (100, 40), (72, 40), (72, 30), (50, 25), (40, 18),
+];
+
+/// Lê um TIFF de uma tira só (como o Ghostscript grava com MaxStripSize=0):
+/// (largura, altura, dados comprimidos em CCITT G4).
+(int, int, Uint8List) _readG4Tiff(String path) {
+  final d = File(path).readAsBytesSync();
+  final le = d[0] == 0x49;
+  int u16(int o) => le ? d[o] | (d[o + 1] << 8) : (d[o] << 8) | d[o + 1];
+  int u32(int o) => le ? u16(o) | (u16(o + 2) << 16) : (u16(o) << 16) | u16(o + 2);
+  final ifd = u32(4);
+  var w = 0, h = 0, off = 0, len = 0, strips = 1;
+  for (var i = 0; i < u16(ifd); i++) {
+    final e = ifd + 2 + i * 12;
+    final v = u16(e + 2) == 3 ? u16(e + 8) : u32(e + 8);
+    switch (u16(e)) {
+      case 256:
+        w = v;
+      case 257:
+        h = v;
+      case 273:
+        off = v;
+        strips = u32(e + 4);
+      case 279:
+        len = v;
+    }
+  }
+  if (strips != 1 || w == 0 || h == 0 || off == 0 || len == 0) {
+    throw FfError('Não foi possível ler a página em preto e branco.');
+  }
+  return (w, h, Uint8List.sublistView(d, off, off + len));
+}
+
+/// PDF em que cada página é uma imagem de 1 bit (CCITT G4), em [dpi].
+Future<void> _writeMonoPdf(List<String> tiffs, int dpi, String out) async {
+  final sink = File(out).openWrite();
+  var pos = 0;
+  final offsets = <int>[];
+  void raw(List<int> b) {
+    sink.add(b);
+    pos += b.length;
+  }
+
+  void obj(String head, [List<int>? stream]) {
+    offsets.add(pos);
+    raw(latin1.encode('${offsets.length} 0 obj\n$head\n'));
+    if (stream != null) {
+      raw(latin1.encode('stream\n'));
+      raw(stream);
+      raw(latin1.encode('\nendstream\n'));
+    }
+    raw(latin1.encode('endobj\n'));
+  }
+
+  raw(latin1.encode('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'));
+  final n = tiffs.length;
+  obj('<< /Type /Catalog /Pages 2 0 R >>');
+  obj('<< /Type /Pages /Count $n /Kids [${[for (var i = 0; i < n; i++) '${3 + i * 3} 0 R'].join(' ')}] >>');
+  for (final t in tiffs) {
+    final (w, h, data) = _readG4Tiff(t);
+    final pw = (w * 72 / dpi).toStringAsFixed(2), ph = (h * 72 / dpi).toStringAsFixed(2);
+    final id = offsets.length + 1;
+    final content = 'q $pw 0 0 $ph 0 0 cm /I Do Q';
+    obj('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $pw $ph] '
+        '/Resources << /XObject << /I ${id + 2} 0 R >> >> /Contents ${id + 1} 0 R >>');
+    obj('<< /Length ${content.length} >>', latin1.encode(content));
+    obj(
+      '<< /Type /XObject /Subtype /Image /Width $w /Height $h /ColorSpace /DeviceGray /BitsPerComponent 1 '
+      '/Filter /CCITTFaxDecode /DecodeParms << /K -1 /Columns $w /Rows $h >> /Length ${data.length} >>',
+      data,
+    );
+  }
+  final xref = pos;
+  final x = StringBuffer('xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n');
+  for (final o in offsets) {
+    x.write('${o.toString().padLeft(10, '0')} 00000 n \n');
+  }
+  x.write('trailer\n<< /Size ${offsets.length + 1} /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n');
+  raw(latin1.encode(x.toString()));
+  await sink.close();
 }
 
 Job buildPdfCompressJob(MediaInfo info, PdfCompressSettings settings, String? outDir, PdfTools tools) {
@@ -179,44 +296,136 @@ Job buildPdfCompressJob(MediaInfo info, PdfCompressSettings settings, String? ou
     body: (ctx) async {
       _checkOpen(info);
       final out = await _outFile(outDir, info, '_filume');
-      final dpi = s.level.dpi;
-      try {
+      final work = await Directory.systemTemp.createTemp('filume_comp_');
+      final target = s.targetMb == null ? null : (s.targetMb! * 1024 * 1024).round();
+      var tries = 0;
+
+      /// Uma tentativa em tons contínuos; devolve o arquivo gerado.
+      Future<String> tone(int dpi, int? q, double from, double to, String label) async {
+        final f = p.join(work.path, 't${tries++}.pdf');
+        // Qualidade JPEG → fator de quantização do Ghostscript.
+        final qf = q == null ? null : ((q < 50 ? 5000 / q : 200 - 2 * q) / 100).clamp(0.02, 20).toStringAsFixed(2);
+        final dict = '<< /QFactor $qf /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >>';
         await _gs(
           ctx,
           tools,
           [
             '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.6', '-dPDFSETTINGS=${s.level.preset}',
             '-dDetectDuplicateImages=true', '-dAutoRotatePages=/None',
+            '-dSubsetFonts=true', '-dCompressFonts=true',
             '-dDownsampleColorImages=true', '-dColorImageDownsampleType=/Bicubic',
             '-dColorImageResolution=$dpi', '-dColorImageDownsampleThreshold=1.1',
             '-dDownsampleGrayImages=true', '-dGrayImageDownsampleType=/Bicubic',
             '-dGrayImageResolution=$dpi', '-dGrayImageDownsampleThreshold=1.1',
-            '-dDownsampleMonoImages=true', '-dMonoImageResolution=${dpi * 2}',
+            '-dDownsampleMonoImages=true', '-dMonoImageResolution=${(dpi * 2).clamp(150, 600)}',
             if (s.grayscale) ...['-sColorConversionStrategy=Gray', '-dProcessColorModel=/DeviceGray'],
-            // Nos níveis fortes, força JPEG nas imagens (o modo automático às vezes
-            // escolhe compressão sem perda, que sai maior).
-            if (s.level.index >= PdfLevel.strong.index) ...[
+            // Nos níveis fortes (ou com qualidade escolhida), força JPEG nas imagens:
+            // o modo automático às vezes escolhe compressão sem perda, que sai maior.
+            if (q != null || s.level.index >= PdfLevel.strong.index) ...[
               '-dAutoFilterColorImages=false', '-dColorImageFilter=/DCTEncode',
               '-dAutoFilterGrayImages=false', '-dGrayImageFilter=/DCTEncode',
             ],
-            '-sOutputFile=$out', info.path,
+            '-sOutputFile=$f',
+            if (q != null) ...['-c', '<< /ColorImageDict $dict /GrayImageDict $dict >> setdistillerparams', '-f'],
+            info.path,
           ],
-          onPage: (n) => ctx.report((n - 1) / info.pages, stage: 'Página $n de ${info.pages}'),
+          onPage: (n) => ctx.report(from + (to - from) * (n - 1) / info.pages, stage: '$label · página $n de ${info.pages}'),
         );
+        return f;
+      }
+
+      /// Uma tentativa em preto e branco puro.
+      Future<String> mono(int dpi, double from, double to, String label) async {
+        final dir = Directory(p.join(work.path, 'm${tries++}'))..createSync();
+        await _gs(
+          ctx,
+          tools,
+          [
+            '-sDEVICE=tiffg4', '-r$dpi', '-dMaxStripSize=0', '-sOutputFile=${p.join(dir.path, 'p_%05d.tif')}',
+            // Corte seco entre preto e branco (sem pontilhado): papel amarelado e
+            // ruído de JPEG viram branco liso, que é o que comprime bem.
+            '-c', '{ 0.62 lt { 0 } { 1 } ifelse } settransfer', '-f',
+            info.path,
+          ],
+          onPage: (n) => ctx.report(from + (to - from) * (n - 1) / info.pages, stage: '$label · página $n de ${info.pages}'),
+        );
+        final tiffs = [for (final e in dir.listSync()) if (e.path.endsWith('.tif')) e.path]..sort();
+        final f = p.join(work.path, 'mono_$dpi.pdf');
+        await _writeMonoPdf(tiffs, dpi, f);
+        return f;
+      }
+
+      String? warning;
+      try {
+        String best;
+        if (target == null) {
+          best = s.mono
+              ? await mono(s.dpi ?? const [300, 300, 200, 150][s.level.index], 0, 0.92, 'Preto e branco')
+              : await tone(s.dpi ?? s.level.dpi, s.quality, 0, 0.92, 'Comprimindo');
+        } else {
+          // Tamanho-alvo: busca o melhor degrau que cabe (poucas tentativas).
+          final steps = s.mono
+              ? [for (final d in const [300, 200, 150, 100]) (d, 0)]
+              : [for (final st in _ladder) if (s.dpi == null || st.$1 <= s.dpi!) st];
+          final sizes = <int, (String, int)>{};
+          Future<int> at(int i) async {
+            if (!sizes.containsKey(i)) {
+              final k = sizes.length;
+              final label = 'Tentativa ${k + 1}';
+              final from = 0.92 * k / 4, to = 0.92 * (k + 1) / 4;
+              final f = s.mono ? await mono(steps[i].$1, from, to, label) : await tone(steps[i].$1, steps[i].$2, from, to, label);
+              sizes[i] = (f, File(f).lengthSync());
+            }
+            return sizes[i]!.$2;
+          }
+
+          var lo = 0, hi = steps.length - 1;
+          if (await at(hi) > target) {
+            lo = hi; // nem o menor degrau cabe
+          } else {
+            while (lo < hi) {
+              final mid = (lo + hi) ~/ 2;
+              if (await at(mid) <= target) {
+                hi = mid;
+              } else {
+                lo = mid + 1;
+              }
+            }
+          }
+          best = sizes[lo]!.$1;
+        }
+        // Passada final sem perda: reempacota a estrutura do PDF.
+        ctx.report(0.94, stage: 'Otimizando a estrutura');
+        final packed = p.join(work.path, 'final.pdf');
+        try {
+          await _qpdf(ctx, tools, ['--object-streams=generate', '--recompress-flate', '--compression-level=9', best, packed]);
+          if (File(packed).lengthSync() < File(best).lengthSync()) best = packed;
+        } catch (_) {}
+        final after = File(best).lengthSync();
+        if (after >= info.sizeBytes) {
+          throw FfError('Este PDF já está bem comprimido: o resultado ficaria maior '
+              '(${fmtBytes(after)} contra ${fmtBytes(info.sizeBytes)}). '
+              '${s.advanced ? 'Tente outras opções avançadas.' : 'Tente um nível mais forte ou as opções avançadas.'}');
+        }
+        if (target != null && after > target) {
+          warning = 'Não deu para chegar a ${fmtBytes(target)}: este é o menor resultado possível'
+              '${s.mono ? '' : ' sem preto e branco'}';
+        }
+        await File(best).copy(out);
       } catch (_) {
         _delete(out);
         rethrow;
+      } finally {
+        try {
+          work.deleteSync(recursive: true);
+        } catch (_) {}
       }
       final after = File(out).lengthSync();
-      if (after >= info.sizeBytes) {
-        _delete(out);
-        throw FfError('Este PDF já está bem comprimido: o resultado ficaria maior '
-            '(${fmtBytes(after)} contra ${fmtBytes(info.sizeBytes)}). Tente um nível mais forte.');
-      }
       return JobResult(
         '${fmtBytes(info.sizeBytes)} → ${fmtBytes(after)} '
         '(−${((1 - after / info.sizeBytes) * 100).round()}%)',
         out,
+        warning: warning,
       );
     },
   );
@@ -629,6 +838,51 @@ MediaInfo? _untouchedDoc(List<PageRef> pages) {
   return doc;
 }
 
+/// PDFs assinados digitalmente entre as páginas da bandeja.
+List<MediaInfo> signedDocsIn(List<PageRef> pages) {
+  final out = <MediaInfo>[];
+  for (final r in pages) {
+    if (r.doc.signatures.isNotEmpty && !out.any((d) => identical(d, r.doc))) out.add(r.doc);
+  }
+  return out;
+}
+
+/// Salvar sem mexer em nada num PDF assinado: o arquivo é copiado byte a
+/// byte e a assinatura continua valendo.
+bool trayKeepsSignature(List<PageRef> pages, TrayOp op) =>
+    op == TrayOp.save && pages.isNotEmpty && (_untouchedDoc(pages)?.signatures.isNotEmpty ?? false);
+
+/// Anexa os [originals] (PDFs assinados) dentro de [pdf], para a assinatura
+/// poder ser conferida mesmo que a cópia tenha sido alterada.
+Future<void> _attachOriginals(JobCtx ctx, PdfTools tools, String pdf, List<MediaInfo> originals, String work,
+    {String password = ''}) async {
+  final tmp = p.join(work, 'com_anexo.pdf');
+  final used = <String>{};
+  await _qpdf(ctx, tools, [
+    if (password.isNotEmpty) '--password=$password',
+    pdf,
+    for (final o in originals) ...[
+      '--add-attachment', o.path,
+      '--key=${uniqueName(used, 'original assinado - ${p.basename(o.path)}')}',
+      '--filename=${p.basename(o.path)}',
+      '--description=Original com assinatura digital, sem alteracoes',
+      '--',
+    ],
+    tmp,
+  ]);
+  await File(tmp).copy(pdf);
+  _delete(tmp);
+}
+
+/// Nome que ainda não está em [used] (acrescenta " (2)", " (3)"…).
+String uniqueName(Set<String> used, String name) {
+  var n = name;
+  for (var i = 2; !used.add(n); i++) {
+    n = '$name ($i)';
+  }
+  return n;
+}
+
 /// Trabalho do FiLume PDF: monta as páginas da bandeja e aplica [op].
 /// O resultado vai para [outDir] com o nome [name] (sem extensão).
 Job buildTrayJob({
@@ -644,6 +898,7 @@ Job buildTrayJob({
   PdfConvertSettings? convert,
   String password = '',
   OcrFn? ocr,
+  bool attachSigned = false,
 }) {
   final snapshot = [for (final r in pages) PageRef(r.doc, r.page, r.rotation, r.skew)];
   final cs = compress?.copy(), ss = split?.copy(), vs = convert?.copy();
@@ -674,15 +929,33 @@ Job buildTrayJob({
 
         String? both(String? a, String? b) => a == null ? b : (b == null ? a : '$a · $b');
 
+        final signed = signedDocsIn(snapshot);
+        if (trayKeepsSignature(snapshot, op)) {
+          // Nada mudou num PDF assinado: cópia idêntica, a assinatura continua valendo.
+          final tmp = p.join(work.path, 'saida.pdf');
+          await File(signed.first.path).copy(tmp);
+          final out = await _moveOut(tmp, target);
+          return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out,
+              warning: 'Assinatura digital preservada: cópia idêntica ao original');
+        }
+        final attach = attachSigned && signed.isNotEmpty && !op.folder;
+        final signNote = signed.isEmpty
+            ? null
+            : 'A assinatura digital não vale nesta cópia${attach ? '; o original assinado foi anexado ao PDF' : ''}';
+
         if (op == TrayOp.save) {
           final tmp = p.join(work.path, 'saida.pdf');
           await _buildTray(ctx, tools, snapshot, fit, tmp, work.path, span: read == null ? 1 : 0.5, jpegQ: jpegQ);
           await addText(tmp, 0.5, 0.98);
+          if (attach) await _attachOriginals(ctx, tools, tmp, signed, work.path);
           final out = await _moveOut(tmp, target);
-          return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out, warning: note);
+          return JobResult('${snapshot.length} páginas · ${fmtBytes(File(out).lengthSync())}', out,
+              warning: both(note, signNote));
         }
         // Um PDF intocado dispensa a montagem (comprimir e proteger usam o original).
-        final single = op.folder || read != null ? null : _untouchedDoc(snapshot);
+        // Em preto e branco as páginas viram imagem: o OCR entra depois da compressão.
+        final lateOcr = op == TrayOp.compress && (cs?.mono ?? false);
+        final single = op.folder || (read != null && !lateOcr) ? null : _untouchedDoc(snapshot);
         final MediaInfo info;
         var from = 0.0;
         if (single != null) {
@@ -692,7 +965,7 @@ Job buildTrayJob({
           final tmp = p.join(src.path, '$name.pdf');
           await _buildTray(ctx, tools, snapshot, fit, tmp, work.path, span: 0.3, jpegQ: jpegQ);
           from = 0.3;
-          if (read != null) {
+          if (read != null && !lateOcr) {
             await addText(tmp, 0.3, 0.6);
             from = 0.6;
           }
@@ -714,8 +987,10 @@ Job buildTrayJob({
         final sub = JobCtx(ctx.tools, ctx.run,
             (pr, stage, speed) => ctx.report(from + (1 - from) * pr, stage: stage, speed: speed));
         final r = await inner.body(sub);
+        if (lateOcr) await addText(r.revealPath, 0.97, 0.99);
+        if (attach) await _attachOriginals(ctx, tools, r.revealPath, signed, work.path, password: password);
         final out = await _moveOut(r.revealPath, target);
-        return JobResult(r.summary, out, warning: both(r.warning, note));
+        return JobResult(r.summary, out, warning: both(both(r.warning, note), signNote));
       } finally {
         try {
           work.deleteSync(recursive: true);
