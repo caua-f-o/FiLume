@@ -374,9 +374,9 @@ showpage
       '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n'
       '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n'
       '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents [4 0 R 5 0 R 6 0 R] >> endobj\n'
-      '${obj(4, 'q 1 0 0 1 300 0 cm 0 0 1 rg 10 400 m 110 400 l')}'
-      '${obj(5, '110 500 l 10 500 l h f 0 0.6 0 rg 10 200 50 50 re f')}'
-      '${obj(6, 'Q 1 0 0 rg 20 20 100 100 re f')}'
+      '${obj(4, 'q 0.5 0 0 0.5 0 0 cm q 2 0 0 2 0 0 cm q 1 0 0 1 300 0 cm 0 0 1 rg 10 400 m 110 400 l')}'
+      '${obj(5, '110 500 l 10 500 l h f 0 0.6 0 rg 10 200 50 50 re f Q')}'
+      '${obj(6, '1 0 0 1 0 0 cm 1 0 0 rg 20 20 100 100 re f Q Q')}'
       'trailer << /Root 1 0 R >>\n%%EOF\n';
   File('$d/split_raw.pdf').writeAsStringSync(split);
   await Process.run(tools.qpdf, ['$d/split_raw.pdf', '$d/split.pdf']);
