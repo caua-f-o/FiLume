@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
+import 'editor.dart';
 import 'ffmpeg.dart';
 import 'format.dart';
 import 'job.dart';
@@ -1268,6 +1269,40 @@ Job buildPdfPasswordJob(MediaInfo info, PdfPasswordSettings settings, String? ou
         rethrow;
       }
       return JobResult(fmtBytes(File(out).lengthSync()), out);
+    },
+  );
+}
+
+// ------------------------------------------------------------------- editor
+
+/// Grava o PDF que está aberto no editor: o PDFium escreve o arquivo e o
+/// qpdf reempacota a estrutura (sem perda) para ele não sair maior à toa.
+Job buildEditorSaveJob(Editor editor, String outDir, String name, PdfTools tools) {
+  return Job(
+    title: '$name.pdf',
+    kind: 'Editar',
+    detail: '${editor.pageCount} ${editor.pageCount == 1 ? 'página' : 'páginas'}',
+    body: (ctx) async {
+      final work = await Directory.systemTemp.createTemp('filume_edit_');
+      try {
+        ctx.report(0.1, stage: 'Gravando as alterações');
+        final raw = p.join(work.path, 'editado.pdf');
+        editor.backend.save(raw);
+        ctx.report(0.6, stage: 'Otimizando a estrutura');
+        var best = raw;
+        final packed = p.join(work.path, 'final.pdf');
+        try {
+          await _qpdf(ctx, tools, ['--object-streams=generate', '--compress-streams=y', raw, packed]);
+          if (File(packed).lengthSync() < File(raw).lengthSync()) best = packed;
+        } catch (_) {}
+        final pages = (await tools.probe(best)).pages;
+        final out = await _moveOut(best, p.join(outDir, '$name.pdf'));
+        return JobResult('$pages ${pages == 1 ? 'página' : 'páginas'} · ${fmtBytes(File(out).lengthSync())}', out);
+      } finally {
+        try {
+          work.deleteSync(recursive: true);
+        } catch (_) {}
+      }
     },
   );
 }

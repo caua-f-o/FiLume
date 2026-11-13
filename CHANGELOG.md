@@ -3,6 +3,18 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.7] — 2026-11-13
+
+### Adicionado
+- **Editor de PDF** (ferramenta Editar), no estilo de um editor de texto:
+  - dois cliques num parágrafo para mudar o que está escrito; a quebra de linha se refaz dentro da largura do parágrafo;
+  - o texto mantém a fonte original quando ela tem as letras necessárias; senão, entra uma fonte padrão parecida, com aviso;
+  - fonte, tamanho, negrito, itálico, cor e alinhamento, para texto novo e para parágrafos existentes;
+  - mover, redimensionar e excluir textos, imagens e desenhos que já estavam no PDF;
+  - inserir texto, imagem, retângulo, elipse, linha, seta, marca-texto, corretivo, traço à mão livre e assinatura desenhada;
+  - desfazer e refazer sem limite, zoom e páginas giradas tratadas como aparecem na tela.
+- O editor usa o PDFium (o motor de PDF do Chrome) embutido no pacote. Tudo roda neste computador; nada é enviado para fora.
+
 ## [1.5.0-beta.6] — 2026-11-12
 
 ### Adicionado

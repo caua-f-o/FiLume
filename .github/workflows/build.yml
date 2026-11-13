@@ -87,6 +87,9 @@ jobs:
           dart run tool/signature_test.dart
           dart run tool/compress_test.dart
           dart run tool/compare_test.dart
+          # Editor de PDF: no build do Windows o PDFium tem de estar presente e funcionando.
+          $env:FILUME_REQUIRE_PDFIUM = '1'
+          dart run tool/editor_test.dart
 
       - name: Empacotar
         shell: pwsh

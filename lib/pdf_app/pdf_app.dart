@@ -25,6 +25,7 @@ import '../ui/settings_page.dart';
 import '../ui/theme.dart';
 import '../ui/title_bar.dart';
 import 'compare_view.dart';
+import 'editor_view.dart';
 import 'save_dialog.dart';
 
 /// FiLume PDF: o app dedicado de PDF. Mesmo programa do FiLume, aberto pelo
@@ -115,6 +116,9 @@ const _suffix = {
 /// Índice do comparador na barra lateral (não usa a bandeja).
 const _compareTool = 5;
 
+/// Índice do editor na barra lateral (tem área e faixa de ferramentas próprias).
+const _editTool = 6;
+
 class PdfShell extends StatefulWidget {
   const PdfShell({super.key, required this.state});
   final AppState state;
@@ -127,6 +131,7 @@ class _PdfShellState extends State<PdfShell> {
   /// Ferramenta aberta; -1 = ajustes.
   int _tool = 0;
   late final CompareSession _compare = CompareSession(widget.state);
+  late final EditorSession _editor = EditorSession(widget.state);
   bool _dragging = false;
 
   AppState get state => widget.state;
@@ -134,6 +139,7 @@ class _PdfShellState extends State<PdfShell> {
   @override
   void dispose() {
     _compare.dispose();
+    _editor.dispose();
     super.dispose();
   }
 
@@ -319,6 +325,8 @@ class _PdfShellState extends State<PdfShell> {
                     Expanded(
                       child: _tool == _compareTool
                           ? CompareView(state: state, session: _compare)
+                          : _tool == _editTool
+                              ? EditorView(state: state, session: _editor)
                           : _tool < 0
                           ? SettingsPage(prefs: state.prefs, mainApp: false, extra: _FoldersSection(prefs: state.prefs))
                           : ListenableBuilder(listenable: state, builder: (context, _) => _workArea(context)),
@@ -471,6 +479,12 @@ class _Rail extends StatelessWidget {
                       onTap: () => onGo(i),
                     ),
                   _RailItem(
+                    icon: Icons.edit_document,
+                    label: 'Editar',
+                    selected: current == _editTool,
+                    onTap: () => onGo(_editTool),
+                  ),
+                  _RailItem(
                     icon: Icons.difference_outlined,
                     label: 'Comparar',
                     selected: current == _compareTool,
@@ -588,14 +602,14 @@ class _Toolbar extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           runSpacing: 4,
           children: [
-            _ToolButton(dense: dense, icon: Icons.add_circle_outline, label: 'Adicionar', tip: 'Adicionar PDFs e imagens', onTap: onAdd),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, icon: Icons.add_circle_outline, label: 'Adicionar', tip: 'Adicionar PDFs e imagens', onTap: onAdd),
+            ToolButton(dense: dense, 
               icon: Icons.scanner_outlined,
               label: 'Digitalizar',
               tip: 'Digitalizar pelo scanner',
               onTap: () => OrganizerWorkspace.scan(context, state),
             ),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: Icons.text_fields,
               label: 'OCR',
               active: ocr,
@@ -607,25 +621,25 @@ class _Toolbar extends StatelessWidget {
               },
             ),
             sep(),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: Icons.rotate_left,
               label: 'Esquerda',
               tip: 'Girar à esquerda ($scope)',
               onTap: none ? null : () => act(() => o.rotate(o.targets, 270)),
             ),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: Icons.rotate_right,
               label: 'Direita',
               tip: 'Girar à direita ($scope)',
               onTap: none ? null : () => act(() => o.rotate(o.targets, 90)),
             ),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: Icons.flip_camera_android_outlined,
               label: 'Inverter',
               tip: 'Inverter 180° ($scope)',
               onTap: none ? null : () => act(() => o.rotate(o.targets, 180)),
             ),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: Icons.straighten,
               label: 'Endireitar',
               tip: 'Endireitar imagens e digitalizações ($scope)',
@@ -638,23 +652,23 @@ class _Toolbar extends StatelessWidget {
                 for (final f in PageFit.values)
                   CheckedPopupMenuItem(value: f, checked: state.pdfConvert.fit == f, child: Text(f.label)),
               ],
-              child: _ToolButton(dense: dense, icon: Icons.aspect_ratio, label: 'Tamanho', dropdown: true, enabled: true),
+              child: ToolButton(dense: dense, icon: Icons.aspect_ratio, label: 'Tamanho', dropdown: true, enabled: true),
             ),
             sep(),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: Icons.delete_outline,
               label: 'Excluir',
               danger: true,
               tip: n == 0 ? 'Excluir (selecione páginas antes)' : 'Excluir ${n == 1 ? 'a página selecionada' : 'as $n selecionadas'}',
               onTap: n == 0 ? null : () => act(() => o.remove(o.selected.toList())),
             ),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: n == 0 ? Icons.select_all : Icons.deselect,
               label: n == 0 ? 'Selecionar' : 'Limpar',
               tip: n == 0 ? 'Selecionar tudo' : 'Limpar seleção',
               onTap: none ? null : () => act(() => n == 0 ? o.selected.addAll(o.pages) : o.selected.clear()),
             ),
-            _ToolButton(dense: dense, 
+            ToolButton(dense: dense, 
               icon: Icons.restore,
               label: 'Restaurar',
               tip: 'Restaurar a bandeja como os arquivos vieram',
@@ -669,8 +683,8 @@ class _Toolbar extends StatelessWidget {
 }
 
 /// Botão da faixa: ícone grande em cima, nome embaixo.
-class _ToolButton extends StatelessWidget {
-  const _ToolButton({
+class ToolButton extends StatelessWidget {
+  const ToolButton({
     required this.icon,
     required this.label,
     this.tip,

@@ -173,6 +173,57 @@ endif()
   }
 }
 
+/// Embute o PDFium (motor de PDF do Chrome, licença BSD/Apache), usado pelo
+/// editor de PDF. Vem dos binários mantidos em bblanchon/pdfium-binaries.
+void bundlePdfium() {
+  if (!Platform.isWindows && Platform.environment['FILUME_FORCE_BUNDLE'] == null) return;
+  final root = Directory('third_party/pdfium');
+  final tmp = Directory('third_party/_dl_pdfium');
+  const tgz = 'pdfium-win-x64.tgz';
+  try {
+    if (!File('${root.path}/bin/pdfium.dll').existsSync()) {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      Directory('${tmp.path}/x').createSync(recursive: true);
+      if (sh('curl', ['-fsSL', '-o', '${tmp.path}/$tgz',
+            'https://github.com/bblanchon/pdfium-binaries/releases/latest/download/$tgz']) ||
+          sh('gh', ['release', 'download', '-R', 'bblanchon/pdfium-binaries', '-p', tgz, '-D', tmp.path])) {
+        if (sh('tar', ['-xzf', '${tmp.path}/$tgz', '-C', '${tmp.path}/x']) ||
+            sh('7z', ['x', '-y', '-o${tmp.path}', '${tmp.path}/$tgz']) && sh('7z', ['x', '-y', '-o${tmp.path}/x', '${tmp.path}/pdfium-win-x64.tar'])) {
+          final dll = Directory('${tmp.path}/x')
+              .listSync(recursive: true)
+              .whereType<File>()
+              .firstWhere((f) => f.path.replaceAll('\\', '/').endsWith('/pdfium.dll'));
+          Directory('${root.path}/bin').createSync(recursive: true);
+          dll.copySync('${root.path}/bin/pdfium.dll');
+          for (final name in const ['LICENSE', 'VERSION']) {
+            final f = File('${tmp.path}/x/$name');
+            if (f.existsSync()) f.copySync('${root.path}/$name');
+          }
+          stdout.writeln('PDFium embutido (${File('${root.path}/bin/pdfium.dll').lengthSync() ~/ 1024} KB).');
+        }
+      }
+    }
+  } catch (e) {
+    stderr.writeln('aviso: PDFium não embutido: $e');
+  } finally {
+    try {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    } catch (_) {}
+  }
+
+  final cmake = File('windows/CMakeLists.txt');
+  if (cmake.existsSync() && !cmake.readAsStringSync().contains('third_party/pdfium')) {
+    cmake.writeAsStringSync('''
+
+# FiLume: PDFium (editor de PDF) ao lado do executável.
+if(EXISTS "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pdfium/bin/pdfium.dll")
+  install(FILES "\${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pdfium/bin/pdfium.dll"
+    DESTINATION "\${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)
+endif()
+''', mode: FileMode.append);
+  }
+}
+
 /// FiLume PDF: o mesmo executável com outro nome (o app decide o que abrir
 /// pelo nome do arquivo). Uma cópia vai para a pasta do build.
 void bundlePdfApp() {
@@ -224,6 +275,7 @@ void main() {
   }
   bundlePdfTools();
   bundleUpscaler();
+  bundlePdfium();
   bundlePdfApp();
   stdout.writeln('Runner do Windows personalizado.');
 }
