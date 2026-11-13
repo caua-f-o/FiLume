@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:filume/core/editor.dart';
+import 'package:path/path.dart' as p;
 import 'package:filume/core/pdf.dart';
 import 'package:filume/core/pdfium.dart';
 
@@ -362,6 +363,37 @@ showpage
   final rr = rot.backend.render(0, 1);
   check('página girada: retângulo desenhado onde foi pedido', rr.width == 792 && ink(rr, 110, 410, 290, 440) > 4000 && ink(rr, 110, 460, 290, 500) == 0, '${ink(rr, 110, 410, 290, 440)}');
   rot.close();
+
+  // Página com o desenho cortado em dois fluxos no meio de um traço (como faz
+  // o "Microsoft Print to PDF"): o primeiro abre o estado (q, cm) e começa o
+  // quadrado azul; o segundo termina o quadrado e fecha o estado.
+  final split = '%PDF-1.4\n'
+      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n'
+      '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n'
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents [4 0 R 5 0 R] >> endobj\n'
+      '4 0 obj << /Length 52 >> stream\nq 1 0 0 1 300 0 cm 0 0 1 rg 10 400 m 110 400 l\nendstream endobj\n'
+      '5 0 obj << /Length 52 >> stream\n110 500 l 10 500 l h f Q 1 0 0 rg 20 20 100 100 re f\nendstream endobj\n'
+      'trailer << /Root 1 0 R >>\n%%EOF\n';
+  File('$d/split_raw.pdf').writeAsStringSync(split);
+  await Process.run(tools.qpdf, ['$d/split_raw.pdf', '$d/split.pdf']);
+  Future<(int, int, int)> splitEdit(String src, String out) async {
+    final e = Editor(() => PdfiumBackend.open(src, pdfium));
+    e.apply(e.newText(0, 'Texto novo no topo', TextStyleSpec(size: 14), 72, 60, 540));
+    e.backend.save(out);
+    e.close();
+    final back = PdfiumBackend.open(out, pdfium);
+    final r = back.render(0, 1);
+    back.close();
+    // azul no lugar (x 310–410), nada onde ele cairia sem o deslocamento, vermelho embaixo
+    return (ink(r, 320, 300, 400, 380), ink(r, 20, 300, 100, 380), ink(r, 30, 680, 110, 760));
+  }
+  final raw = await splitEdit('$d/split.pdf', '$d/split_raw_out.pdf');
+  print('  sem preparar: azul no lugar ${raw.$1}, fora do lugar ${raw.$2}, vermelho ${raw.$3}');
+  final prepared = await prepareForEdit(tools, '$d/split.pdf');
+  check('preparo junta os fluxos da página', prepared != '$d/split.pdf');
+  final fixed = await splitEdit(prepared, '$d/split_out.pdf');
+  check('desenho cortado em fluxos continua no lugar depois de editar', fixed.$1 > 5000 && fixed.$2 == 0 && fixed.$3 > 5000, '$fixed');
+  Directory(p.dirname(prepared)).deleteSync(recursive: true);
   dir.deleteSync(recursive: true);
 }
 

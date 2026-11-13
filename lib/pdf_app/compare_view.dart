@@ -100,6 +100,15 @@ class CompareSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Tira os dois arquivos e o resultado: volta ao começo.
+  void clearAll() {
+    files[0] = files[1] = null;
+    error = null;
+    selected = 0;
+    _drop();
+    notifyListeners();
+  }
+
   void swap() {
     final t = files[0];
     files[0] = files[1];
@@ -282,12 +291,21 @@ class CompareView extends StatelessWidget {
                 children: [
                   const SectionLabel('Arquivos'),
                   _FileRow(session: session, slot: 0),
-                  Align(
-                    child: IconButton(
-                      tooltip: 'Trocar original e novo',
-                      onPressed: session.running || (session.files[0] == null && session.files[1] == null) ? null : session.swap,
-                      icon: const Icon(Icons.swap_vert),
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        tooltip: 'Trocar original e novo',
+                        onPressed: session.running || (session.files[0] == null && session.files[1] == null) ? null : session.swap,
+                        icon: const Icon(Icons.swap_vert),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: session.running || (session.files[0] == null && session.files[1] == null) ? null : session.clearAll,
+                        icon: const Icon(Icons.clear_all, size: 18),
+                        label: const Text('Limpar'),
+                      ),
+                    ],
                   ),
                   _FileRow(session: session, slot: 1),
                   const SectionLabel('Tolerância'),

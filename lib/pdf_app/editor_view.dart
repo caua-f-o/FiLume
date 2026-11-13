@@ -108,7 +108,9 @@ class EditorSession extends ChangeNotifier {
       return;
     }
     try {
-      final ed = Editor(() => PdfiumBackend.open(file, pdfium));
+      final pdfTools = state.pdf;
+      final src = pdfTools == null ? file : await prepareForEdit(pdfTools, file);
+      final ed = Editor(() => PdfiumBackend.open(src, pdfium));
       ed.page(0);
       editor?.close();
       _reset();
@@ -124,6 +126,10 @@ class EditorSession extends ChangeNotifier {
       if (first.blocks.isEmpty && first.objs.any((o) => o.kind == ObjKind.image && o.width * o.height > 0.5 * first.width * first.height)) {
         notice = 'Esta página é uma imagem (digitalização): não há texto para editar. '
             'Dá para escrever por cima, cobrir com o corretivo, desenhar e inserir imagens.';
+      } else if (first.blocks.isEmpty && first.objs.where((o) => o.kind == ObjKind.path).length > 50) {
+        notice = 'Este PDF não tem texto de verdade: as letras foram desenhadas como formas '
+            '(acontece com o "Microsoft Print to PDF" e outras impressoras virtuais). '
+            'Dá para cobrir com o corretivo, escrever por cima, desenhar e inserir imagens.';
       } else if (first.blocks.isEmpty && first.objs.isNotEmpty && first.objs.every((o) => o.kind == ObjKind.other)) {
         notice = 'O conteúdo desta página está agrupado num bloco só, que o editor não abre. '
             'Dá para escrever por cima, cobrir com o corretivo, desenhar e inserir imagens.';

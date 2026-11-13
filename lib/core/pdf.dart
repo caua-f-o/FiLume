@@ -1275,6 +1275,24 @@ Job buildPdfPasswordJob(MediaInfo info, PdfPasswordSettings settings, String? ou
 
 // ------------------------------------------------------------------- editor
 
+/// Cópia de [file] pronta para o editor, numa pasta temporária nova: o
+/// conteúdo de cada página vira um fluxo só. Há programas (o "Microsoft Print
+/// to PDF", por exemplo) que cortam o desenho da página em vários pedaços no
+/// meio de um traço, contando que um continue o outro; o PDFium trata cada
+/// pedaço sozinho e, ao regravar a página, partes dela saíam do lugar.
+/// Se o qpdf não conseguir, devolve o próprio arquivo.
+Future<String> prepareForEdit(PdfTools tools, String file) async {
+  try {
+    final dir = await Directory.systemTemp.createTemp('filume_edit_');
+    final out = p.join(dir.path, 'editar.pdf');
+    final r = await Process.run(tools.qpdf, ['--coalesce-contents', file, out]);
+    // 0 = ok; 3 = ok com avisos (arquivo reparado).
+    if ((r.exitCode == 0 || r.exitCode == 3) && File(out).existsSync() && File(out).lengthSync() > 0) return out;
+    await dir.delete(recursive: true);
+  } catch (_) {}
+  return file;
+}
+
 /// Grava o PDF que está aberto no editor: o PDFium escreve o arquivo e o
 /// qpdf reempacota a estrutura (sem perda) para ele não sair maior à toa.
 Job buildEditorSaveJob(Editor editor, String outDir, String name, PdfTools tools) {

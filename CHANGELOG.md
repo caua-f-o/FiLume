@@ -3,6 +3,15 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.9] — 2026-11-13
+
+### Adicionado
+- Comparador: botão **Limpar**, que tira os dois arquivos (e o resultado) de uma vez.
+- Editor: aviso ao abrir PDFs em que as letras são desenhos e não texto (comum no "Microsoft Print to PDF").
+
+### Corrigido
+- Editor: em PDFs que dividem o desenho da página em vários pedaços (como os do "Microsoft Print to PDF"), editar empurrava partes da página para o lado e fazia o cabeçalho sumir. Agora a página é juntada num pedaço só antes de abrir no editor, sem mudar nada na aparência.
+
 ## [1.5.0-beta.8] — 2026-11-13
 
 ### Corrigido
