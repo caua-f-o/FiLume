@@ -332,6 +332,17 @@ showpage
   final flat = File('$d/out.txt').existsSync() ? utf8.decode(File('$d/out.txt').readAsBytesSync(), allowMalformed: true) : '';
   check('Ghostscript lê o texto novo e não acha o antigo', flat.contains('condições da locação') && flat.contains('Observação') && flat.contains('Rodapé') &&
       flat.contains('Segunda pagina') && !flat.contains('anexos'), flat.replaceAll(RegExp(r'\s+'), ' ').trim());
+  if (!flat.contains('condições da locação')) {
+    // Diagnóstico: dicionários de fonte e trechos de texto do arquivo gravado.
+    await Process.run(tools.qpdf, ['--qdf', '--object-streams=disable', '$d/out.pdf', '$d/out.qdf']);
+    final q = latin1.decode(File('$d/out.qdf').readAsBytesSync());
+    for (final m in RegExp(r'<<[^<>]*/Type /Font[^<>]*>>').allMatches(q)) {
+      print('  fonte: ${m[0]!.replaceAll(RegExp(r'\s+'), ' ')}');
+    }
+    for (final m in RegExp(r'/F\w+ [\d.]+ Tf[^\n]*\n?[^\n]*\(.{0,40}').allMatches(q).take(12)) {
+      print('  texto: ${m[0]!.replaceAll(RegExp(r'\s+'), ' ')}');
+    }
+  }
   final again = PdfiumBackend.open('$d/out.pdf', pdfium);
   final reopened = buildBlocks(again.objects(0));
   check('reabrir o arquivo gravado: edições estão lá', reopened.any((b) => b.text.contains('março de 2027')) && again.objects(0).any((o) => o.kind == ObjKind.image));
