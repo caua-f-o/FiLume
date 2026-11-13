@@ -506,6 +506,13 @@ class TextOp extends EditOp {
   @override
   void apply(EditBackend b) {
     substituted = false;
+    if (font.standard != null) {
+      // Fonte padrão não depende do parágrafo antigo: ele sai antes, para não
+      // ser confundido com outro texto da página na mesma fonte.
+      if (remove.isNotEmpty) b.remove(page, remove);
+      if (lines.isNotEmpty) b.addText(page, lines, font, size, color);
+      return;
+    }
     if (lines.isNotEmpty && !b.addText(page, lines, font, size, color)) {
       final fb = fallback;
       if (fb != null) {

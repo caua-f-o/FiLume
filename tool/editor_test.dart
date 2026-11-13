@@ -329,7 +329,8 @@ showpage
   final chk = await Process.run(tools.qpdf, ['--check', '$d/out.pdf']);
   check('arquivo gravado é um PDF válido (qpdf)', chk.exitCode == 0, '${chk.stdout}${chk.stderr}'.trim().split('\n').last);
   await Process.run(tools.gs!, ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=txtwrite', '-sOutputFile=$d/out.txt', '$d/out.pdf']);
-  final flat = File('$d/out.txt').existsSync() ? utf8.decode(File('$d/out.txt').readAsBytesSync(), allowMalformed: true) : '';
+  final flat = (File('$d/out.txt').existsSync() ? utf8.decode(File('$d/out.txt').readAsBytesSync(), allowMalformed: true) : '')
+      .replaceAll(RegExp(r'\s+'), ' ');
   check('Ghostscript lê o texto novo e não acha o antigo', flat.contains('condições da locação') && flat.contains('Observação') && flat.contains('Rodapé') &&
       flat.contains('Segunda pagina') && !flat.contains('anexos'), flat.replaceAll(RegExp(r'\s+'), ' ').trim());
   if (!flat.contains('condições da locação')) {
