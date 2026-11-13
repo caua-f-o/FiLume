@@ -364,35 +364,50 @@ showpage
   check('página girada: retângulo desenhado onde foi pedido', rr.width == 792 && ink(rr, 110, 410, 290, 440) > 4000 && ink(rr, 110, 460, 290, 500) == 0, '${ink(rr, 110, 410, 290, 440)}');
   rot.close();
 
-  // Página com o desenho cortado em dois fluxos no meio de um traço (como faz
-  // o "Microsoft Print to PDF"): o primeiro abre o estado (q, cm) e começa o
-  // quadrado azul; o segundo termina o quadrado e fecha o estado.
+  // Página com o desenho cortado em três fluxos no meio de traços (como faz
+  // o "Microsoft Print to PDF"): o 1º abre o estado (q, cm) e começa o quadrado
+  // azul; o 2º termina o azul e desenha o verde, ainda deslocado; o 3º fecha o
+  // estado e desenha o vermelho. Mover o verde e o vermelho obriga o PDFium a
+  // reescrever o 2º e o 3º fluxo sem mexer no 1º.
+  String obj(int n, String body) => '$n 0 obj << /Length ${body.length} >> stream\n$body\nendstream endobj\n';
   final split = '%PDF-1.4\n'
       '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n'
       '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n'
-      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents [4 0 R 5 0 R] >> endobj\n'
-      '4 0 obj << /Length 52 >> stream\nq 1 0 0 1 300 0 cm 0 0 1 rg 10 400 m 110 400 l\nendstream endobj\n'
-      '5 0 obj << /Length 52 >> stream\n110 500 l 10 500 l h f Q 1 0 0 rg 20 20 100 100 re f\nendstream endobj\n'
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents [4 0 R 5 0 R 6 0 R] >> endobj\n'
+      '${obj(4, 'q 1 0 0 1 300 0 cm 0 0 1 rg 10 400 m 110 400 l')}'
+      '${obj(5, '110 500 l 10 500 l h f 0 0.6 0 rg 10 200 50 50 re f')}'
+      '${obj(6, 'Q 1 0 0 rg 20 20 100 100 re f')}'
       'trailer << /Root 1 0 R >>\n%%EOF\n';
   File('$d/split_raw.pdf').writeAsStringSync(split);
   await Process.run(tools.qpdf, ['$d/split_raw.pdf', '$d/split.pdf']);
-  Future<(int, int, int)> splitEdit(String src, String out) async {
+  Future<List<int>> splitEdit(String src, String out) async {
     final e = Editor(() => PdfiumBackend.open(src, pdfium));
+    final green = e.page(0).hit(0, 335, 567), red = e.page(0).hit(0, 70, 722);
+    if (green != null) e.apply(MoveOp(0, green.indices, 100, 0));
+    final red2 = e.page(0).hit(0, 70, 722) ?? red;
+    if (red2 != null) e.apply(MoveOp(0, red2.indices, 200, 0));
     e.apply(e.newText(0, 'Texto novo no topo', TextStyleSpec(size: 14), 72, 60, 540));
     e.backend.save(out);
     e.close();
     final back = PdfiumBackend.open(out, pdfium);
     final r = back.render(0, 1);
     back.close();
-    // azul no lugar (x 310–410), nada onde ele cairia sem o deslocamento, vermelho embaixo
-    return (ink(r, 320, 300, 400, 380), ink(r, 20, 300, 100, 380), ink(r, 30, 680, 110, 760));
+    return [
+      green == null ? -1 : 1, red == null ? -1 : 1,
+      ink(r, 320, 300, 400, 380), // azul no lugar
+      ink(r, 20, 300, 100, 380), // azul sem o deslocamento (errado)
+      ink(r, 415, 547, 455, 587), // verde movido
+      ink(r, 230, 680, 310, 760), // vermelho movido
+      ink(r, 30, 680, 110, 760), // vermelho no lugar antigo (errado)
+    ];
   }
+  bool good(List<int> v) => v[0] == 1 && v[1] == 1 && v[2] > 5000 && v[3] == 0 && v[4] > 1200 && v[5] > 5000 && v[6] == 0;
   final raw = await splitEdit('$d/split.pdf', '$d/split_raw_out.pdf');
-  print('  sem preparar: azul no lugar ${raw.$1}, fora do lugar ${raw.$2}, vermelho ${raw.$3}');
+  print('  sem preparar: ${good(raw) ? 'certo' : 'quebrado'} $raw');
   final prepared = await prepareForEdit(tools, '$d/split.pdf');
   check('preparo junta os fluxos da página', prepared != '$d/split.pdf');
   final fixed = await splitEdit(prepared, '$d/split_out.pdf');
-  check('desenho cortado em fluxos continua no lugar depois de editar', fixed.$1 > 5000 && fixed.$2 == 0 && fixed.$3 > 5000, '$fixed');
+  check('desenho cortado em fluxos continua no lugar depois de mover objetos', good(fixed), '$fixed');
   Directory(p.dirname(prepared)).deleteSync(recursive: true);
   dir.deleteSync(recursive: true);
 }
