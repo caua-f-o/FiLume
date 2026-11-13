@@ -3,6 +3,12 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.8] — 2026-11-13
+
+### Corrigido
+- Editor: parágrafos editados em PDFs com fonte não embutida podiam trocar letras acentuadas (õ virava ı, ã virava ª). Agora esses parágrafos usam a fonte padrão equivalente, com a mesma aparência e os acentos certos.
+- O teste do editor com o PDFium passou a bloquear a publicação, como devia.
+
 ## [1.5.0-beta.7] — 2026-11-13
 
 ### Adicionado

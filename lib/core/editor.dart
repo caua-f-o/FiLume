@@ -679,7 +679,10 @@ class Editor {
   /// A fonte original de [first] consegue escrever [text]?
   bool canReuse(PdfObj first, String text, int page) {
     final runes = text.runes.where((r) => r != 0x0A && r != 0x20);
-    if (!first.embedded) return runes.every(winAnsi);
+    // Fonte não embutida: a padrão equivalente tem a mesma cara e codificação
+    // conhecida (WinAnsi). Reaproveitar a original pode trocar acentos (õ → ı)
+    // quando ela usa a codificação padrão do Type 1.
+    if (!first.embedded) return false;
     final have = _charsOf(first.font, page);
     return runes.every(have.contains);
   }
