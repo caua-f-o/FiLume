@@ -108,6 +108,8 @@ class Pdfium {
         setBlendMode = lib.lookupFunction<Void Function(_H, Pointer<Uint8>), void Function(_H, Pointer<Uint8>)>('FPDFPageObj_SetBlendMode'),
         createTextObj = lib.lookupFunction<_H Function(_H, _H, Float), _H Function(_H, _H, double)>('FPDFPageObj_CreateTextObj'),
         setText = lib.lookupFunction<Int32 Function(_H, Pointer<Uint16>), int Function(_H, Pointer<Uint16>)>('FPDFText_SetText'),
+        loadFont = lib.lookupFunction<_H Function(_H, Pointer<Uint8>, Uint32, Int32, Int32), _H Function(_H, Pointer<Uint8>, int, int, int)>(
+            'FPDFText_LoadFont'),
         loadStandardFont = lib.lookupFunction<_H Function(_H, Pointer<Uint8>), _H Function(_H, Pointer<Uint8>)>('FPDFText_LoadStandardFont'),
         createPath = lib.lookupFunction<_H Function(Float, Float), _H Function(double, double)>('FPDFPageObj_CreateNewPath'),
         pathMoveTo = lib.lookupFunction<Int32 Function(_H, Float, Float), int Function(_H, double, double)>('FPDFPath_MoveTo'),
@@ -161,6 +163,7 @@ class Pdfium {
   final int Function(_H, _H, Pointer<Uint16>, int) textObjText;
   final int Function(_H, Pointer<Float>) textObjFontSize;
   final _H Function(_H) textObjFont;
+  final _H Function(_H, Pointer<Uint8>, int, int, int) loadFont;
   final int Function(_H) fontFlags, fontWeight, fontEmbedded;
   final void Function(_H) fontClose;
   final int Function(_H, Pointer<Uint32>, Pointer<Uint32>, Pointer<Uint32>, Pointer<Uint32>) getFillColor;
@@ -258,6 +261,8 @@ class PdfiumBackend implements EditBackend {
   final Map<int, _H> _pages = {};
   final Map<int, Mat> _p2v = {};
   final Map<String, _H> _fonts = {};
+  final Map<String, _H> _sysFonts = {};
+  final List<Pointer<Uint8>> _fontData = [];
   final Map<String, double> _widths = {};
   bool _closed = false;
 
@@ -530,15 +535,83 @@ class PdfiumBackend implements EditBackend {
 
   static String _squash(String s) => s.replaceAll(RegExp(r'\s+'), '');
 
+  /// Fontes do Windows com as mesmas medidas das 12 padrão do PDF.
+  static const _ttf = {
+    'Helvetica': 'arial.ttf',
+    'Helvetica-Bold': 'arialbd.ttf',
+    'Helvetica-Oblique': 'ariali.ttf',
+    'Helvetica-BoldOblique': 'arialbi.ttf',
+    'Times-Roman': 'times.ttf',
+    'Times-Bold': 'timesbd.ttf',
+    'Times-Italic': 'timesi.ttf',
+    'Times-BoldItalic': 'timesbi.ttf',
+    'Courier': 'cour.ttf',
+    'Courier-Bold': 'courbd.ttf',
+    'Courier-Oblique': 'couri.ttf',
+    'Courier-BoldOblique': 'courbi.ttf',
+  };
+
+  /// A equivalente do Windows de uma fonte padrão, embutida no PDF.
+  _H _systemFont(String std) => _sysFonts[std] ??= () {
+        final file = _ttf[std];
+        if (file == null) return nullptr;
+        final dir = Platform.environment['FILUME_FONTS_DIR'] ?? p.join(Platform.environment['WINDIR'] ?? r'C:\Windows', 'Fonts');
+        final f = File(p.join(dir, file));
+        if (!f.existsSync()) return nullptr;
+        final bytes = f.readAsBytesSync();
+        final data = _pdf.alloc<Uint8>(bytes.length);
+        data.asTypedList(bytes.length).setAll(0, bytes);
+        _fontData.add(data);
+        // 2 = TrueType; CID ligado: escreve qualquer letra que a fonte tenha.
+        return _pdf.loadFont(_doc, data, bytes.length, 2, 1);
+      }();
+
+  /// Fonte do documento, não embutida e com o mesmo nome de [std], usada na
+  /// página. Ao gravar, o PDFium junta as duas num recurso só (pelo nome), e o
+  /// texto novo herdaria a codificação dela: acentos trocados.
+  _H _clash(int page, String std, _H mine) {
+    final h = _page(page);
+    final n = _pdf.countObjects(h);
+    for (var i = 0; i < n; i++) {
+      final obj = _pdf.getObject(h, i);
+      if (obj == nullptr || _pdf.objType(obj) != 1) continue;
+      final f = _pdf.textObjFont(obj);
+      if (f == nullptr || f == mine || _pdf.fontEmbedded(f) != 0) continue;
+      if (_fontName(f) == std) return f;
+    }
+    return nullptr;
+  }
+
   @override
   bool addText(int page, List<TextLine> lines, FontSpec spec, double size, int color) {
-    final h = _page(page);
+    final std = spec.standard;
+    if (std != null) {
+      final other = _clash(page, std, _font(page, spec));
+      if (other != nullptr) {
+        // Primeiro com a própria fonte do documento (sai igual ao resto);
+        // se ela não tiver as letras, com a equivalente do Windows.
+        if (_write(page, lines, other, size, color, verify: true)) return true;
+        final sys = _systemFont(std);
+        if (sys != nullptr && _write(page, lines, sys, size, color, verify: true)) return true;
+        throw FfError('Não foi possível escrever esse texto na página ${page + 1} sem trocar letras acentuadas.',
+            'A página já usa a fonte $std com outra codificação.');
+      }
+    }
     final font = _font(page, spec);
     if (font == nullptr) return false;
-    final reuse = spec.standard == null;
+    final reuse = std == null;
     if (reuse && lines.any((l) => l.text.contains(' ')) && textWidth(page, spec, size, ' ') < 0.08 * size) {
       return false; // a fonte do documento não tem o espaço: as palavras grudariam
     }
+    final ok = _write(page, lines, font, size, color, verify: reuse);
+    if (!ok && !reuse) throw FfError('Não foi possível escrever o texto na página ${page + 1}.');
+    return ok;
+  }
+
+  /// Escreve as linhas com [font]; com [verify], confere lendo de volta e
+  /// desfaz tudo se o texto não sair igual.
+  bool _write(int page, List<TextLine> lines, _H font, double size, int color, {required bool verify}) {
+    final h = _page(page);
     final inv = _toView(page).inverse();
     final (a, b) = inv.vec(1, 0);
     final (c, d) = inv.vec(0, -1);
@@ -565,8 +638,8 @@ class PdfiumBackend implements EditBackend {
       _pdf.insertObject(h, obj);
     }
     final after = _pdf.countObjects(h);
-    if (ok && reuse) {
-      // Confere se a fonte do documento escreveu mesmo o que foi pedido.
+    if (ok && verify) {
+      // Confere se a fonte escreveu mesmo o que foi pedido.
       final tp = _pdf.textLoadPage(h);
       if (tp == nullptr) {
         ok = false;
@@ -582,7 +655,6 @@ class PdfiumBackend implements EditBackend {
     }
     if (!ok) {
       _removeRaw(h, [for (var i = before; i < after; i++) i]);
-      if (!reuse) throw FfError('Não foi possível escrever o texto na página ${page + 1}.');
       return false;
     }
     _generate(page);
@@ -720,10 +792,13 @@ class PdfiumBackend implements EditBackend {
     for (final h in _pages.values) {
       _pdf.closePage(h);
     }
-    for (final f in _fonts.values) {
-      _pdf.fontClose(f);
+    for (final f in [..._fonts.values, ..._sysFonts.values]) {
+      if (f != nullptr) _pdf.fontClose(f);
     }
     _pdf.closeDocument(_doc);
     _pdf.free(_data);
+    for (final d in _fontData) {
+      _pdf.free(d);
+    }
   }
 }

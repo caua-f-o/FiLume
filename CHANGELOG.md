@@ -6,7 +6,7 @@ Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como p
 ## [1.5.0-beta.8] — 2026-11-13
 
 ### Corrigido
-- Editor: parágrafos editados em PDFs com fonte não embutida podiam trocar letras acentuadas (õ virava ı, ã virava ª). Agora esses parágrafos usam a fonte padrão equivalente, com a mesma aparência e os acentos certos.
+- Editor: texto novo ou editado podia trocar letras acentuadas (õ virava ı, ã virava ª) quando a página já usava uma fonte padrão de mesmo nome, não embutida e com outra codificação. Agora o editor escreve com a própria fonte da página quando ela tem as letras e, se não tiver, com a equivalente do Windows (Arial, Times New Roman ou Courier New) embutida no arquivo.
 - O teste do editor com o PDFium passou a bloquear a publicação, como devia.
 
 ## [1.5.0-beta.7] — 2026-11-13
