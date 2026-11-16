@@ -179,8 +179,11 @@ Future<void> main() async {
         final a = heifDecodeArgs(p.join(fx, 'simples.heic'), single!, st);
         print('DIAG args=$a');
         if (a != null) {
-          final r = await Process.run(tools.ffmpeg, [...a, '-map', '[out]', '-frames:v', '1', '-y', '$d/diag.png']);
-          print('DIAG ffmpeg exit=${r.exitCode}\n${r.stderr.toString().split('\n').where((l) => !l.startsWith('  ')).take(25).join('\n')}');
+          final r = await Process.run(tools.ffmpeg, [...a, '-map', '[out]', '-frames:v', '1', '-c:v', 'png', '-update', '1', '-y', '$d/diag.png']);
+          final di = await tools.probe('$d/diag.png');
+          print('DIAG ffmpeg exit=${r.exitCode} saída=${di.width}x${di.height}');
+          final fl = File('$d/heic/${p.basenameWithoutExtension(sgl.revealPath)}.jpg');
+          print('DIAG revealPath=${sgl.revealPath} existe=${fl.existsSync()}');
         }
       }
     }
