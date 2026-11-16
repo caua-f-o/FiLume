@@ -166,9 +166,11 @@ Future<void> main() async {
     final busy = await Process.start(p.join(target.path, 'aberto.exe'), ['-n', '60', '127.0.0.1']);
     final blocked = await apply(['-Wait', '2']);
     check('com programa aberto na pasta, a troca não acontece', blocked == 2 && File(p.join(target.path, 'FiLume.exe')).readAsStringSync() == 'velho exe', 'código $blocked');
+    // Com -Close, o próprio script fecha o que estiver aberto e segue.
+    final code = await apply(['-Wait', '20', '-Close', '-Grace', '1']);
+    final ended = await busy.exitCode.timeout(const Duration(seconds: 5), onTimeout: () => -999);
+    check('com -Close, o programa aberto é encerrado pelo script', ended != -999, 'continuou aberto');
     busy.kill();
-    await busy.exitCode;
-    final code = await apply(['-Wait', '20']);
     check('troca dos arquivos: novos entram, os do usuário ficam',
         code == 0 && File(p.join(target.path, 'FiLume.exe')).readAsStringSync() == 'novo exe' &&
             File(p.join(target.path, 'FiLume PDF.exe')).existsSync() && File(p.join(target.path, 'data', 'ação.txt')).readAsStringSync() == 'novo dado' &&

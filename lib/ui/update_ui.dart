@@ -57,11 +57,6 @@ class _UpdateDialogState extends State<_UpdateDialog> {
 
   Future<void> _install() async {
     setState(() => _installing = true);
-    await _refreshOthers();
-    if (_others.isNotEmpty) {
-      setState(() => _installing = false);
-      return;
-    }
     final state = widget.state;
     if (!await up.install()) {
       if (mounted) setState(() => _installing = false);
@@ -118,7 +113,8 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                 if (_others.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
-                    'Feche antes ${_others.length == 1 ? 'este programa' : 'estes programas'} do FiLume: ${_others.toSet().join(', ')}.',
+                    '${_others.toSet().length == 1 ? 'Também será fechado' : 'Também serão fechados'}: ${_others.toSet().join(', ')}. '
+                    'Se houver algo em andamento ${_others.toSet().length == 1 ? 'nele' : 'neles'}, será interrompido.',
                     style: t.textTheme.bodyMedium?.copyWith(color: cs.error),
                   ),
                 ],
@@ -132,7 +128,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
               ..add(TextButton(onPressed: _installing ? null : () => Navigator.pop(context), child: const Text('Depois')))
               ..add(FilledButton(
                 onPressed: _installing ? null : _install,
-                child: Text(_others.isEmpty ? 'Instalar e reabrir' : 'Já fechei, instalar'),
+                child: Text(_others.isEmpty ? 'Instalar e reabrir' : 'Fechar tudo e instalar'),
               ));
           case UpdatePhase.failed:
             body = Column(

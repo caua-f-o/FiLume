@@ -3,6 +3,11 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.12] — 2026-11-16
+
+### Alterado
+- Atualização: não é mais preciso fechar os outros programas do FiLume na mão. Ao instalar, o atualizador fecha sozinho o que estiver aberto na pasta (os outros aplicativos e qualquer processo auxiliar que tenha ficado para trás), troca os arquivos e reabre. O aviso mostra antes o que será fechado.
+
 ## [1.5.0-beta.11] — 2026-11-16
 
 ### Adicionado

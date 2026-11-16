@@ -366,10 +366,11 @@ Future<String> extractRelease(String zip, String dest) async {
 }
 
 /// Script que troca os arquivos: espera os programas da pasta fecharem, copia
-/// a versão nova por cima e reabre o programa. Se algum arquivo estiver em uso
+/// a versão nova por cima e reabre o programa. Com -Close, fecha por conta própria
+/// os que continuarem abertos. Se algum arquivo estiver em uso
 /// ou a cópia falhar, avisa e não deixa a instalação pela metade sem dizer.
 const applyScript = r'''
-param([string]$Source, [string]$Target, [string]$Relaunch, [string]$Log, [int]$Wait = 60, [switch]$Quiet)
+param([string]$Source, [string]$Target, [string]$Relaunch, [string]$Log, [int]$Wait = 60, [switch]$Quiet, [switch]$Close, [int]$Grace = 6)
 $ErrorActionPreference = 'Continue'
 function Say($text) {
   Add-Content -LiteralPath $Log -Value "$(Get-Date -Format s) $text" -Encoding UTF8
@@ -399,10 +400,31 @@ function Running {
   @(Get-Process | Where-Object { try { $_.Path -and ((Long $_.Path).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) } catch { $false } })
 }
 Say "Atualizando $Target a partir de $Source"
-for ($i = 0; $i -lt $Wait * 2; $i++) {
-  if ((Running).Count -eq 0) { break }
-  Start-Sleep -Milliseconds 500
+function WaitGone([int]$seconds) {
+  for ($i = 0; $i -lt $seconds * 4; $i++) {
+    if ((Running).Count -eq 0) { return $true }
+    Start-Sleep -Milliseconds 250
+  }
+  return (Running).Count -eq 0
 }
+if ($Close) {
+  # Quem pediu a atualização fecha sozinho; o resto (outros programas do FiLume e
+  # ajudantes que tenham ficado para trás) é fechado aqui: primeiro com educação,
+  # depois à força.
+  if (-not (WaitGone $Grace)) {
+    foreach ($proc in Running) {
+      Say "Fechando $($proc.ProcessName) ($($proc.Id))"
+      try { $proc.CloseMainWindow() | Out-Null } catch {}
+    }
+    if (-not (WaitGone 4)) {
+      foreach ($proc in Running) {
+        Say "Encerrando $($proc.ProcessName) ($($proc.Id))"
+        try { Stop-Process -Id $proc.Id -Force -ErrorAction Stop } catch { Say "Não deu para encerrar: $_" }
+      }
+    }
+  }
+}
+WaitGone $Wait | Out-Null
 $left = Running
 if ($left.Count -gt 0) {
   $names = ($left | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', '
@@ -431,7 +453,7 @@ String get updateWorkDir => p.join(Directory.systemTemp.path, 'FiLume_atualizaca
 
 /// Dispara o script de troca (que roda sozinho depois que este programa fecha).
 /// Quem chama deve encerrar o programa em seguida.
-Future<void> launchApply(String source, {String? target, String? relaunch}) async {
+Future<void> launchApply(String source, {String? target, String? relaunch, bool closeOthers = true}) async {
   final dir = Directory(updateWorkDir)..createSync(recursive: true);
   final script = File(p.join(dir.path, 'aplicar.ps1'));
   await script.writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode(applyScript)]);
@@ -443,6 +465,7 @@ Future<void> launchApply(String source, {String? target, String? relaunch}) asyn
       '-Target', target ?? installDir,
       '-Relaunch', relaunch ?? Platform.resolvedExecutable,
       '-Log', p.join(dir.path, 'atualizacao.log'),
+      if (closeOthers) '-Close',
     ],
     mode: ProcessStartMode.detached,
   );
