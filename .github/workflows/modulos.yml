@@ -45,7 +45,7 @@ jobs:
           foreach ($id in 'pdf-word', 'documentos') {
             $want = (Get-Content "modulos/$id/versao.txt" -Raw).Trim()
             $build = if ($have[$id] -eq $want) { '0' } else { '1' }
-            Write-Host "$id: publicado=$($have[$id]) pedido=$want montar=$build"
+            Write-Host "${id}: publicado=$($have[$id]) pedido=$want montar=$build"
             "BUILD_$($id.Replace('-', '_').ToUpper())=$build" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
             "VER_$($id.Replace('-', '_').ToUpper())=$want" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           }
