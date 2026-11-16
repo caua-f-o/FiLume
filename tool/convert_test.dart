@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:filume/core/ffmpeg.dart';
 import 'package:filume/core/heif.dart';
+import 'package:filume/core/image.dart';
 import 'package:filume/core/job.dart';
 import 'package:filume/core/office.dart';
 import 'package:filume/core/pdf.dart';
@@ -184,6 +185,11 @@ Future<void> main() async {
           print('DIAG ffmpeg exit=${r.exitCode} saída=${di.width}x${di.height}');
           final fl = File('$d/heic/${p.basenameWithoutExtension(sgl.revealPath)}.jpg');
           print('DIAG revealPath=${sgl.revealPath} existe=${fl.existsSync()}');
+          print('DIAG diag.png: ${await pixel('$d/diag.png', 32, 20)} ${await pixel('$d/diag.png', 32, 100)}');
+          print('DIAG jpg: ${await pixel(sgl.revealPath, 10, 10)} ${await pixel(sgl.revealPath, 100, 10)} ${await pixel(sgl.revealPath, 32, 50)}');
+          final r2 = await Process.run(tools.ffmpeg, imageArgs(input: '$d/diag.png', output: '$d/diag2.jpg', format: ImgFormat.jpg, quality: 90, encoders: caps.encoders, hasAlpha: false));
+          final d2 = await tools.probe('$d/diag2.jpg');
+          print('DIAG png→jpg exit=${r2.exitCode} ${d2.width}x${d2.height}');
         }
       }
     }
