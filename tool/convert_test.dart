@@ -173,6 +173,16 @@ Future<void> main() async {
       final i = await tools.probe(sgl.revealPath);
       final top = await pixel(sgl.revealPath, 32, 20), bottom = await pixel(sgl.revealPath, 32, 100);
       check('HEIC simples → JPG: rotação', i.width == 64 && i.height == 128 && near(top, 255, 0, 0) && near(bottom, 0, 0, 255), '${i.width}x${i.height} $top $bottom');
+      if (!(i.width == 64 && i.height == 128)) {
+        final st = await heifStreams(tools, p.join(fx, 'simples.heic'));
+        print('DIAG simples: primaryId=${single?.primaryId} fluxos=$st');
+        final a = heifDecodeArgs(p.join(fx, 'simples.heic'), single!, st);
+        print('DIAG args=$a');
+        if (a != null) {
+          final r = await Process.run(tools.ffmpeg, [...a, '-map', '[out]', '-frames:v', '1', '-y', '$d/diag.png']);
+          print('DIAG ffmpeg exit=${r.exitCode}\n${r.stderr.toString().split('\n').where((l) => !l.startsWith('  ')).take(25).join('\n')}');
+        }
+      }
     }
     final hp = await conv(p.join(fx, 'grade.heic'), 'pdf', s: UniversalSettings()..outDir = '$d/heic');
     check('HEIC → PDF', hp != null && File(hp.revealPath).lengthSync() > 500);
