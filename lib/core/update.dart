@@ -374,16 +374,24 @@ function Tell($text) {
   if ($Quiet) { return }
   try { (New-Object -ComObject WScript.Shell).Popup($text, 0, 'FiLume', 48) | Out-Null } catch {}
 }
-# Caminhos curtos (C:\Users\FULANO~1\...) viram o caminho completo, para comparar com o dos programas abertos.
+# Caminhos curtos (C:\Users\FULANO~1\...) viram o caminho completo dos dois lados, para comparar com o dos programas abertos.
+$kernel = $null
 try {
   $sig = '[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern int GetLongPathName(string path, System.Text.StringBuilder buffer, int size);'
   $kernel = Add-Type -MemberDefinition $sig -Name Kernel -Namespace FiLumeUpdate -PassThru
-  $buffer = New-Object System.Text.StringBuilder 2048
-  if ($kernel::GetLongPathName($Target, $buffer, 2048) -gt 0) { $Target = $buffer.ToString() }
 } catch {}
+function Long([string]$path) {
+  if ($kernel -eq $null -or -not $path) { return $path }
+  try {
+    $buffer = New-Object System.Text.StringBuilder 2048
+    if ($kernel::GetLongPathName($path, $buffer, 2048) -gt 0) { return $buffer.ToString() }
+  } catch {}
+  return $path
+}
+$Target = Long $Target
 $prefix = $Target.TrimEnd('\') + '\'
 function Running {
-  @(Get-Process | Where-Object { try { $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) } catch { $false } })
+  @(Get-Process | Where-Object { try { $_.Path -and ((Long $_.Path).StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) } catch { $false } })
 }
 Say "Atualizando $Target a partir de $Source"
 for ($i = 0; $i -lt $Wait * 2; $i++) {
