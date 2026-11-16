@@ -3,6 +3,22 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.10] — 2026-11-16
+
+### Adicionado
+- **FiLume Conversor**: novo aplicativo dedicado (`FiLume Conversor.exe`, na mesma pasta) que leva qualquer arquivo para outro formato. Solte arquivos de tipos diferentes (ou pastas inteiras) e cada um ganha a sua lista de formatos:
+  - **Fotos**: JPG, PNG, WebP, AVIF, JPEG XL, TIFF, BMP, GIF, ICO e PDF, lendo também **HEIC/HEIF** (iPhone), PSD, TGA e JPEG 2000. Fotos HEIC são montadas com o tamanho e a rotação certos. Gravar em HEIC aparece quando o Windows tem o codificador HEVC.
+  - **Vídeos**: MP4, MKV, MOV, WebM, AVI e GIF animado, ou só o áudio. Quando só o formato muda, o vídeo é copiado sem perda.
+  - **Áudios**: MP3, M4A, Opus, OGG, FLAC, WAV, AIFF, AC-3 e WMA.
+  - **PDF**: para imagens (JPG/PNG), texto e Word.
+  - **Word, Excel e PowerPoint** (e OpenDocument, RTF, HTML, CSV): para PDF e entre si, usando o LibreOffice ou o Microsoft Office instalado no computador, sem abrir janela. Sem nenhum dos dois, ficam texto → PDF e Word → texto.
+  - **Legendas**: SRT, WebVTT e ASS (legendas antigas com acento errado são corrigidas).
+  - Opções de qualidade, tamanho, resolução, juntar várias imagens num PDF só e pasta de saída. Nada é sobrescrito.
+- **Atualização pelo próprio app** (nos três aplicativos): consulta as versões publicadas no GitHub, mostra o que mudou, baixa, confere o arquivo, troca os arquivos da pasta e reabre. Nos Ajustes dá para escolher o canal **Estável** ou **Beta**, desligar a consulta ao abrir e procurar na hora.
+
+### Alterado
+- A tela inicial do FiLume e a barra lateral do FiLume PDF ganharam atalho para o Conversor (o antigo "Arquivos – em breve").
+
 ## [1.5.0-beta.9] — 2026-11-13
 
 ### Adicionado

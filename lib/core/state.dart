@@ -17,6 +17,7 @@ import 'mux.dart';
 import 'pdf.dart';
 import 'pdf_workspace.dart';
 import 'prefs.dart';
+import 'updater.dart';
 import 'scan.dart';
 import 'split.dart';
 import 'streams.dart';
@@ -356,6 +357,7 @@ class AppState extends ChangeNotifier {
   final Map<String, Future<String?>> _thumbs = {};
   final JobQueue queue = JobQueue();
   final Prefs prefs = Prefs();
+  final Updater updater = Updater();
 
   Future<void> init() async {
     queue.onDone = (job) {

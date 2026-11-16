@@ -6,8 +6,6 @@ import 'package:media_kit/media_kit.dart';
 import 'core/launch.dart';
 import 'core/prefs.dart';
 import 'core/state.dart';
-import 'ui/common.dart';
-import 'ui/expressive.dart';
 import 'ui/home_page.dart';
 import 'ui/modules.dart';
 import 'pdf_app/pdf_app.dart';
@@ -16,11 +14,20 @@ import 'ui/settings_page.dart';
 import 'ui/theme.dart';
 import 'ui/preview_player.dart';
 import 'ui/title_bar.dart';
+import 'ui/update_ui.dart';
+import 'conv_app/conv_app.dart';
 import 'ui/tool_page.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   await setupWindowChrome();
+  if (isConverterApp(args)) {
+    // FiLume Conversor: só o que a conversão precisa (sem player nem prévias).
+    final state = AppState(pdfOnly: true);
+    await state.prefs.load();
+    runApp(ConvApp(state: state, files: fileArgs(args)));
+    return;
+  }
   if (isPdfApp(args)) {
     // FiLume PDF: não carrega o player nem nada de vídeo, áudio ou imagem.
     final state = AppState(pdfOnly: true);
@@ -97,12 +104,9 @@ class _FiLumeAppState extends State<FiLumeApp> {
 }
 
 class _Page {
-  const _Page(this.id, this.name, this.icon, this.selectedIcon, [this.soon = const []]);
+  const _Page(this.id, this.name, this.icon, this.selectedIcon);
   final String id, name;
   final IconData icon, selectedIcon;
-
-  /// Ferramentas planejadas (módulo ainda não pronto).
-  final List<String> soon;
 }
 
 const _pages = [
@@ -111,10 +115,7 @@ const _pages = [
   _Page('video', 'Vídeo', Icons.videocam_outlined, Icons.videocam),
   _Page('audio', 'Áudio', Icons.music_note_outlined, Icons.music_note),
   _Page('image', 'Imagem', Icons.image_outlined, Icons.image),
-  _Page('files', 'Arquivos', Icons.swap_horiz, Icons.swap_horiz, [
-    'Word, Excel e PowerPoint para PDF',
-    'PDF para texto',
-  ]),
+  _Page('files', 'Conversor', Icons.swap_horiz, Icons.swap_horiz),
 ];
 const _settings = _Page('settings', 'Ajustes', Icons.tune, Icons.tune);
 
@@ -132,7 +133,15 @@ class _ShellState extends State<Shell> {
   String _initialPage() {
     final prefs = widget.state.prefs;
     final wanted = prefs.startPage == 'last' ? prefs.lastPage : 'home';
-    return wanted != 'pdf' && _pages.any((p) => p.id == wanted) ? wanted : 'home';
+    return wanted != 'pdf' && wanted != 'files' && _pages.any((p) => p.id == wanted) ? wanted : 'home';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) checkUpdatesOnStart(context, widget.state);
+    });
   }
 
   void _go(String page) {
@@ -143,6 +152,14 @@ class _ShellState extends State<Shell> {
       state.pendingPdfs.clear();
       final busy = [state.video, state.audio, state.images].any((l) => l.items.isNotEmpty);
       offerPdfApp(context, state, files, keepOpen: busy);
+      return;
+    }
+    if (page == 'files') {
+      // O conversor universal também é um app à parte; este continua aberto.
+      final messenger = ScaffoldMessenger.of(context);
+      launchConverterApp().then((ok) {
+        if (!ok) messenger.showSnackBar(const SnackBar(content: Text('Não consegui abrir o FiLume Conversor.')));
+      });
       return;
     }
     if (page == _page) return;
@@ -158,7 +175,6 @@ class _ShellState extends State<Shell> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final state = widget.state;
-    final page = _page == 'settings' ? _settings : _pages.firstWhere((p) => p.id == _page);
     return Scaffold(
       body: Stack(
         children: [
@@ -200,8 +216,8 @@ class _ShellState extends State<Shell> {
                               'video' => ToolPage(state: state, module: videoModule),
                               'audio' => ToolPage(state: state, module: audioModule),
                               'image' => ToolPage(state: state, module: imageModule),
-                              'settings' => SettingsPage(prefs: state.prefs),
-                              _ => _SoonPage(page: page),
+                              'settings' => SettingsPage(prefs: state.prefs, updates: UpdateSection(state: state)),
+                              _ => const SizedBox.shrink(),
                             },
                           ),
                         ),
@@ -308,59 +324,6 @@ class _RailItem extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SoonPage extends StatelessWidget {
-  const _SoonPage({required this.page});
-  final _Page page;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context);
-    final cs = t.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 24, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          PageTitle(page.name),
-          const SizedBox(height: 4),
-          Text(
-            'Este módulo ainda não está pronto. Ferramentas planejadas:',
-            style: t.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final tool in page.soon)
-                SizedBox(
-                  width: 300,
-                  child: Panel(
-                    child: Row(
-                      children: [
-                        Icon(page.icon, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(tool, style: t.textTheme.titleSmall),
-                        ),
-                        Text(
-                          'em breve',
-                          style: t.textTheme.labelSmall?.copyWith(
-                            color: cs.tertiary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
       ),
     );
   }

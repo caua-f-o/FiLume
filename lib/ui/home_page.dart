@@ -42,10 +42,9 @@ String? routeFiles(AppState state, List<String> paths) {
 }
 
 class _Category {
-  const _Category(this.id, this.name, this.sub, this.icon, this.motif, {this.soon = false});
+  const _Category(this.id, this.name, this.sub, this.icon, this.motif);
   final String id, name, sub, motif;
   final IconData icon;
-  final bool soon;
 }
 
 const _categories = [
@@ -54,7 +53,7 @@ const _categories = [
   _Category('video', 'Vídeo', 'Comprimir · Dividir · Cortar · Converter', Icons.videocam_outlined, 'video'),
   _Category('audio', 'Áudio', 'Converter · Comprimir · Mixar · Unir', Icons.music_note_outlined, 'audio'),
   _Category('image', 'Imagem', 'Ampliar com IA · Converter · Comprimir', Icons.image_outlined, 'image'),
-  _Category('files', 'Arquivos', 'Conversor de documentos', Icons.swap_horiz, 'convert', soon: true),
+  _Category('files', 'FiLume Conversor', 'App dedicado: fotos (HEIC), vídeos, áudios, PDF e documentos', Icons.swap_horiz, 'convert'),
 ];
 
 class HomePage extends StatelessWidget {
@@ -178,14 +177,6 @@ class _Categories extends StatelessWidget {
                                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                               ),
                             ),
-                            if (c.soon) ...[
-                              const SizedBox(width: 8),
-                              Pill(
-                                'em breve',
-                                color: mcs.onPrimaryContainer,
-                                background: mcs.onPrimaryContainer.withValues(alpha: 0.14),
-                              ),
-                            ],
                           ],
                         ),
                         const SizedBox(height: 3),

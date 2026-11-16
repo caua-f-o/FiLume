@@ -58,6 +58,17 @@ class Prefs extends ChangeNotifier {
   /// Opções de digitalização e scanners já encontrados (ver ScanSettings).
   Map<String, dynamic> scan = {};
 
+  /// Atualizações: "stable" | "beta"; null = segue o tipo da versão instalada.
+  String? updateChannel;
+  bool updateAuto = true;
+
+  /// Última consulta automática (ISO 8601) e versão que a pessoa pediu para pular.
+  String? updateLastCheck;
+  String? updateSkipped;
+
+  /// Conversor: pasta de saída escolhida (null = junto de cada arquivo).
+  String? convOutDir;
+
   /// Cor de destaque do Windows (0xAARRGGBB), se foi possível ler.
   int? systemAccent;
 
@@ -97,6 +108,12 @@ class Prefs extends ChangeNotifier {
           final pl = j['pdfLastDir'];
           if (pl is String) pdfLastDir = pl;
           if (j['ocr'] is bool) ocr = j['ocr'] as bool;
+          final uc = j['updateChannel'];
+          if (uc == 'stable' || uc == 'beta') updateChannel = uc as String;
+          if (j['updateAuto'] is bool) updateAuto = j['updateAuto'] as bool;
+          if (j['updateLastCheck'] is String) updateLastCheck = j['updateLastCheck'] as String;
+          if (j['updateSkipped'] is String) updateSkipped = j['updateSkipped'] as String;
+          if (j['convOutDir'] is String) convOutDir = j['convOutDir'] as String;
           final sc = j['scan'];
           if (sc is Map) scan = sc.cast<String, dynamic>();
           final rs = j['recents'];
@@ -130,6 +147,11 @@ class Prefs extends ChangeNotifier {
         'ocr': ocr,
         if (scan.isNotEmpty) 'scan': scan,
         if (pdfLastDir != null) 'pdfLastDir': pdfLastDir,
+        if (updateChannel != null) 'updateChannel': updateChannel,
+        'updateAuto': updateAuto,
+        if (updateLastCheck != null) 'updateLastCheck': updateLastCheck,
+        if (updateSkipped != null) 'updateSkipped': updateSkipped,
+        if (convOutDir != null) 'convOutDir': convOutDir,
         'recents': [for (final r in recents) r.toJson()],
       }));
     } catch (_) {}

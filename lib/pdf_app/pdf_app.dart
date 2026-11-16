@@ -24,6 +24,7 @@ import '../ui/process_button.dart';
 import '../ui/settings_page.dart';
 import '../ui/theme.dart';
 import '../ui/title_bar.dart';
+import '../ui/update_ui.dart';
 import 'compare_view.dart';
 import 'editor_view.dart';
 import 'save_dialog.dart';
@@ -135,6 +136,14 @@ class _PdfShellState extends State<PdfShell> {
   bool _dragging = false;
 
   AppState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) checkUpdatesOnStart(context, state);
+    });
+  }
 
   @override
   void dispose() {
@@ -328,7 +337,7 @@ class _PdfShellState extends State<PdfShell> {
                           : _tool == _editTool
                               ? EditorView(state: state, session: _editor)
                           : _tool < 0
-                          ? SettingsPage(prefs: state.prefs, mainApp: false, extra: _FoldersSection(prefs: state.prefs))
+                          ? SettingsPage(prefs: state.prefs, mainApp: false, extra: _FoldersSection(prefs: state.prefs), updates: UpdateSection(state: state))
                           : ListenableBuilder(listenable: state, builder: (context, _) => _workArea(context)),
                     ),
                   ],
@@ -493,6 +502,18 @@ class _Rail extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+          _RailItem(
+            icon: Icons.swap_horiz,
+            label: 'Conversor',
+            tooltip: 'Abrir o FiLume Conversor (qualquer arquivo para outro formato)',
+            selected: false,
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              if (!await launchConverterApp()) {
+                messenger.showSnackBar(const SnackBar(content: Text('Não consegui abrir o FiLume Conversor.')));
+              }
+            },
           ),
           _RailItem(
             icon: Icons.open_in_new,

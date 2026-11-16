@@ -5,11 +5,14 @@ import 'home_widgets.dart';
 import 'theme.dart';
 
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.prefs, this.extra, this.mainApp = true});
+  const SettingsPage({super.key, required this.prefs, this.extra, this.updates, this.mainApp = true});
   final Prefs prefs;
 
   /// Seção a mais, mostrada antes das outras (pastas do FiLume PDF).
   final Widget? extra;
+
+  /// Cartão de atualizações (fica no fim da página).
+  final Widget? updates;
 
   /// Falso no FiLume PDF: esconde o que só vale para o app principal.
   final bool mainApp;
@@ -154,6 +157,7 @@ class SettingsPage extends StatelessWidget {
                 Expanded(child: _Preview(prefs: prefs)),
               ],
             ),
+            if (updates != null) ...[const SizedBox(height: 16), updates!],
           ],
         ),
       ),

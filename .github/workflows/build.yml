@@ -95,6 +95,16 @@ jobs:
           dart run tool/editor_test.dart
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Teste do conversor e do atualizador (bloqueia o build)
+        shell: pwsh
+        run: |
+          $env:FILUME_FFMPEG_DIR = (Resolve-Path 'build/windows/x64/runner/Release/ffmpeg').Path
+          $env:FILUME_REQUIRE_HEIC = '1'
+          dart run tool/convert_test.dart
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dart run tool/update_test.dart
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Empacotar
         shell: pwsh
         run: |
@@ -102,6 +112,7 @@ jobs:
           Copy-Item build/windows/x64/runner/Release/* dist/FiLume -Recurse
           # FiLume PDF é o mesmo executável com outro nome; garante que ele está no pacote.
           if (-not (Test-Path 'dist/FiLume/FiLume PDF.exe')) { Copy-Item dist/FiLume/FiLume.exe 'dist/FiLume/FiLume PDF.exe' }
+          if (-not (Test-Path 'dist/FiLume/FiLume Conversor.exe')) { Copy-Item dist/FiLume/FiLume.exe 'dist/FiLume/FiLume Conversor.exe' }
           Get-ChildItem dist/FiLume -Filter *.exe | ForEach-Object { "$($_.Name) $([math]::Round($_.Length/1KB)) KB" }
           Copy-Item LICENSE, THIRD_PARTY_NOTICES.md dist/FiLume
           Compress-Archive -Path dist/FiLume -DestinationPath FiLume-windows-x64.zip

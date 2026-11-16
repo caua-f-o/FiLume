@@ -7,6 +7,10 @@ import 'package:path/path.dart' as p;
 bool isPdfApp(List<String> args) =>
     args.contains('--pdf') || p.basenameWithoutExtension(Platform.resolvedExecutable).toLowerCase().contains('pdf');
 
+/// O FiLume Conversor segue a mesma ideia: executável "FiLume Conversor" (ou --converter).
+bool isConverterApp(List<String> args) =>
+    args.contains('--converter') || p.basenameWithoutExtension(Platform.resolvedExecutable).toLowerCase().contains('conversor');
+
 /// Arquivos passados na linha de comando (o que não é opção).
 List<String> fileArgs(List<String> args) => [
       for (final a in args)
@@ -29,6 +33,12 @@ Future<bool> launchPdfApp(List<String> files) {
   final exe = p.join(_exeDir, Platform.isWindows ? 'FiLume PDF.exe' : 'filume_pdf');
   // Sem o executável dedicado, o próprio programa abre em modo PDF.
   return File(exe).existsSync() ? _start(exe, files) : _start(Platform.resolvedExecutable, ['--pdf', ...files]);
+}
+
+/// Abre o FiLume Conversor já com [files] na lista.
+Future<bool> launchConverterApp([List<String> files = const []]) {
+  final exe = p.join(_exeDir, Platform.isWindows ? 'FiLume Conversor.exe' : 'filume_conversor');
+  return File(exe).existsSync() ? _start(exe, files) : _start(Platform.resolvedExecutable, ['--converter', ...files]);
 }
 
 /// Abre o FiLume principal (vídeo, áudio e imagem).

@@ -29,6 +29,8 @@ Não precisa instalar nada além do próprio FiLume: o FFmpeg, o qpdf e o Ghosts
 
 É portátil: não mexe no registro e pode ficar num pendrive. Para remover, apague a pasta.
 
+O FiLume se atualiza sozinho: em **Ajustes → Atualizações** ele consulta as versões publicadas aqui, baixa e troca os arquivos da pasta. Lá também se escolhe entre o canal **Estável** e o **Beta**. Só essa consulta e o download usam a internet; seus arquivos nunca saem do computador.
+
 Quer testar novidades antes? As **betas** ficam nas [releases](https://github.com/caua-f-o/FiLume/releases) marcadas como *Pre-release*. Podem ter falhas; para o dia a dia, use a versão estável.
 
 ## Ferramentas
@@ -70,6 +72,19 @@ Aplicativo dedicado (`FiLume PDF.exe`, na mesma pasta do FiLume). Tudo gira em t
 | **Comparar** | Compara duas versões de um PDF (ou duas digitalizações): acha páginas inseridas e removidas, marca o que mudou em cada página, lista as palavras alteradas e gera um relatório em PDF. |
 
 Ao salvar, uma caixa pede o nome e a pasta, com atalhos para as pastas guardadas nos Ajustes. PDFs com **assinatura digital** são identificados: o app avisa antes de qualquer alteração que a invalide e pode anexar o original assinado ao novo arquivo. Com o **OCR** ligado, digitalizações e fotos saem com texto pesquisável (reconhecimento do próprio Windows 10/11).
+
+### 🔁 FiLume Conversor
+
+Aplicativo dedicado (`FiLume Conversor.exe`, na mesma pasta). Solte qualquer mistura de arquivos, ou pastas inteiras, e escolha o formato de cada um (ou de todos de um tipo de uma vez). Tudo é convertido no próprio computador.
+
+| De | Para |
+| --- | --- |
+| **Fotos** (JPG, PNG, WebP, AVIF, **HEIC/HEIF**, TIFF, BMP, GIF, PSD, TGA…) | JPG, PNG, WebP, AVIF, JPEG XL, TIFF, BMP, GIF, ICO, PDF (uma por arquivo ou todas num PDF só). HEIC como saída quando o Windows tem o codificador HEVC. |
+| **Vídeos** (MP4, MKV, MOV, WebM, AVI, WMV, FLV, MPG, TS…) | MP4, MKV, MOV, WebM, AVI, GIF animado, ou só o áudio. |
+| **Áudios** (MP3, M4A, WAV, FLAC, OGG, Opus, WMA, AIFF…) | MP3, M4A, Opus, OGG, FLAC, WAV, AIFF, AC-3, WMA. |
+| **PDF** | Imagens (JPG/PNG), texto, Word (DOCX/ODT). |
+| **Word, Excel, PowerPoint**, OpenDocument, RTF, HTML, TXT, CSV | PDF e os outros formatos da mesma família. Usa o LibreOffice ou o Microsoft Office instalado, sem abrir janela. |
+| **Legendas** (SRT, VTT, ASS) | SRT, WebVTT, ASS. |
 
 ### 🖼️ Imagem
 

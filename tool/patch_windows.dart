@@ -238,7 +238,32 @@ install(PROGRAMS "\$<TARGET_FILE:\${BINARY_NAME}>"
   }
 }
 
+/// FiLume Conversor: outra cópia do executável, com o nome do conversor.
+void bundleConverterApp() {
+  final cmake = File('windows/CMakeLists.txt');
+  if (cmake.existsSync() && !cmake.readAsStringSync().contains('FiLume Conversor.exe')) {
+    cmake.writeAsStringSync('''
+
+# FiLume Conversor: cópia do executável com o nome do conversor universal.
+install(PROGRAMS "\$<TARGET_FILE:\${BINARY_NAME}>"
+  DESTINATION "\${CMAKE_INSTALL_PREFIX}" RENAME "FiLume Conversor.exe" COMPONENT Runtime)
+''', mode: FileMode.append);
+  }
+}
+
+/// Grava a versão do pubspec.yaml em lib/core/version.dart (o atualizador
+/// compara com as versões publicadas).
+void writeVersion() {
+  final m = RegExp(r'^version:\s*([^\s+]+)', multiLine: true).firstMatch(File('pubspec.yaml').readAsStringSync());
+  if (m == null) throw StateError('pubspec.yaml sem versão');
+  final f = File('lib/core/version.dart');
+  final text = f.readAsStringSync().replaceFirst(RegExp(r"const appVersion = '[^']*';"), "const appVersion = '${m[1]}';");
+  f.writeAsStringSync(text);
+  stdout.writeln('Versão: ${m[1]}');
+}
+
 void main() {
+  writeVersion();
   patch('windows/runner/main.cpp', [
     ('L"filume"', 'L"FiLume"'),
     ('Win32Window::Size size(1280, 720);', 'Win32Window::Size size(1320, 800);'),
@@ -277,5 +302,6 @@ void main() {
   bundleUpscaler();
   bundlePdfium();
   bundlePdfApp();
+  bundleConverterApp();
   stdout.writeln('Runner do Windows personalizado.');
 }
