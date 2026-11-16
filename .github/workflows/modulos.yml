@@ -1,0 +1,211 @@
+name: Módulos do FiLume
+
+# Monta os módulos opcionais (baixados pelo programa quando a pessoa pede) e
+# publica na release fixa "modulos". Cada módulo só é refeito quando o número
+# em modulos/<módulo>/versao.txt muda.
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'modulos/**'
+      - '.github/workflows/modulos.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: modulos
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  modulos:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: O que já está publicado
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pronto | Out-Null
+          gh release download modulos -p modulos.json -D pronto 2>$null
+          if (Test-Path pronto/modulos.json) { Get-Content pronto/modulos.json } else { Write-Host 'Nada publicado ainda.' }
+          $have = @{}
+          if (Test-Path pronto/modulos.json) {
+            foreach ($m in (Get-Content pronto/modulos.json -Raw | ConvertFrom-Json).modules) { $have[$m.id] = $m.version }
+          }
+          foreach ($id in 'pdf-word', 'documentos') {
+            $want = (Get-Content "modulos/$id/versao.txt" -Raw).Trim()
+            $build = if ($have[$id] -eq $want) { '0' } else { '1' }
+            Write-Host "$id: publicado=$($have[$id]) pedido=$want montar=$build"
+            "BUILD_$($id.Replace('-', '_').ToUpper())=$build" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            "VER_$($id.Replace('-', '_').ToUpper())=$want" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          }
+          $global:LASTEXITCODE = 0
+
+      - name: Arquivos de teste
+        shell: pwsh
+        run: |
+          pip install --quiet pymupdf python-docx openpyxl python-pptx
+          python modulos/teste/gerar.py teste
+
+      # ------------------------------------------------------------ PDF → Word
+      - name: 'Módulo PDF → Word: montar'
+        if: env.BUILD_PDF_WORD == '1'
+        shell: pwsh
+        run: |
+          pip install --quiet -r modulos/pdf-word/requirements.txt
+          pyinstaller --noconfirm --clean --onedir --console --name filume-pdf2docx `
+            --distpath out --workpath work --specpath work `
+            --exclude-module onnxruntime --exclude-module pymupdf4llm --exclude-module pymupdf_layout `
+            --exclude-module networkx --exclude-module tkinter --exclude-module matplotlib `
+            --exclude-module pytest `
+            modulos/pdf-word/filume_pdf2docx.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller falhou' }
+          Copy-Item modulos/pdf-word/LICENCAS.txt out/filume-pdf2docx/
+          "{0:N1} MB" -f ((Get-ChildItem out/filume-pdf2docx -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: 'Módulo PDF → Word: testar o pacote pronto'
+        if: env.BUILD_PDF_WORD == '1'
+        shell: pwsh
+        run: |
+          # Numa pasta com espaço e acento, como a de muita gente.
+          $dir = New-Item -ItemType Directory -Force 'teste/saída do módulo'
+          & out/filume-pdf2docx/filume-pdf2docx.exe 'teste/relatório.pdf' "$dir/relatório.docx"
+          if ($LASTEXITCODE -ne 0) { throw "o módulo terminou com código $LASTEXITCODE" }
+          python modulos/teste/conferir.py docx "$dir/relatório.docx"
+          if ($LASTEXITCODE -ne 0) { throw 'o documento gerado não confere' }
+          & out/filume-pdf2docx/filume-pdf2docx.exe 'teste/não existe.pdf' "$dir/x.docx"
+          if ($LASTEXITCODE -eq 0) { throw 'devia falhar com arquivo que não existe' }
+          $global:LASTEXITCODE = 0
+          tar.exe -a -c -f "pronto/modulo-pdf-word-$env:VER_PDF_WORD.zip" -C out/filume-pdf2docx .
+          if ($LASTEXITCODE -ne 0) { throw 'não deu para compactar' }
+
+      # ------------------------------------------------- Documentos do Office
+      - name: 'Módulo Documentos: baixar o LibreOffice e enxugar'
+        if: env.BUILD_DOCUMENTOS == '1'
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $base = 'https://download.documentfoundation.org/libreoffice/stable/'
+          $html = (Invoke-WebRequest $base -UseBasicParsing).Content
+          $ver = [regex]::Matches($html, 'href="(\d+\.\d+\.\d+)/"') | ForEach-Object { [version]$_.Groups[1].Value } | Sort-Object | Select-Object -Last 1
+          if (-not $ver) { throw 'não achei a versão estável do LibreOffice' }
+          $msi = "LibreOffice_${ver}_Win_x86-64.msi"
+          Write-Host "LibreOffice $ver"
+          Invoke-WebRequest "$base$ver/win/x86_64/$msi" -OutFile lo.msi
+          $sum = ((Invoke-WebRequest "$base$ver/win/x86_64/$msi.sha256" -UseBasicParsing).Content -split '\s+')[0].ToLower()
+          $got = (Get-FileHash lo.msi -Algorithm SHA256).Hash.ToLower()
+          if ($sum -notmatch '^[0-9a-f]{64}$' -or $sum -ne $got) { throw "o download do LibreOffice não confere ($got x $sum)" }
+          $target = Join-Path $PWD 'lo'
+          $p = Start-Process msiexec.exe -ArgumentList '/a', 'lo.msi', '/qn', "TARGETDIR=$target" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec terminou com $($p.ExitCode)" }
+          $soffice = Get-ChildItem lo -Recurse -Filter soffice.exe | Select-Object -First 1
+          if (-not $soffice) { throw 'soffice.exe não apareceu' }
+          $root = $soffice.Directory.Parent.FullName
+          function Size { "{0:N0} MB" -f ((Get-ChildItem $root -Recurse -File | Measure-Object Length -Sum).Sum / 1MB) }
+          Write-Host "Completo: $(Size)"
+          # O que a conversão sem janela não usa.
+          $drop = 'help', 'readmes', 'sdk', 'share/gallery', 'share/template', 'share/wizards', 'share/autotext',
+                  'share/wordbook', 'share/Scripts', 'share/basic', 'share/extensions', 'share/autocorr',
+                  'share/palette', 'share/tipoftheday', 'share/theme_definitions', 'share/toolbarmode',
+                  'program/classes', 'program/wizards', 'program/help'
+          foreach ($d in $drop) { Remove-Item -Recurse -Force (Join-Path $root $d) -ErrorAction SilentlyContinue }
+          Get-ChildItem $root -Filter *.msi | Remove-Item -Force
+          Get-ChildItem (Join-Path $root 'program') -Directory -Filter 'python-core-*' | Remove-Item -Recurse -Force
+          # Ícones: fica só um tema.
+          Get-ChildItem (Join-Path $root 'share/config') -Filter 'images_*.zip' | Where-Object { $_.Name -ne 'images_colibre.zip' } | Remove-Item -Force
+          # Idiomas da interface: ficam português e inglês.
+          $keep = '^(pt-BR|pt|en-US|en-GB)$'
+          Get-ChildItem (Join-Path $root 'program/resource') -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch $keep } | Remove-Item -Recurse -Force
+          Get-ChildItem (Join-Path $root 'share/registry') -Filter 'Langpack-*.xcd' | Where-Object { $_.BaseName -notmatch '^Langpack-(pt-BR|pt|en-US|en-GB)$' } | Remove-Item -Force
+          Get-ChildItem (Join-Path $root 'share/registry/res') -Filter '*.xcd' -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -notmatch '_(pt-BR|pt|en-US|en-GB)$' } | Remove-Item -Force
+          Write-Host "Enxuto: $(Size)"
+          Copy-Item modulos/documentos/LICENCAS.txt $root
+          "LO_ROOT=$root" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "LO_VER=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: 'Módulo Documentos: testar o pacote pronto'
+        if: env.BUILD_DOCUMENTOS == '1'
+        shell: pwsh
+        run: |
+          $soffice = Join-Path $env:LO_ROOT 'program/soffice.exe'
+          $out = New-Item -ItemType Directory -Force 'teste/saída do office'
+          $profile = ([Uri](Join-Path $PWD 'teste/perfil lo')).AbsoluteUri
+          function Conv($file, $filter, $ext, $infilter) {
+            $a = @("-env:UserInstallation=$profile", '--headless', '--norestore', '--nolockcheck', '--nodefault')
+            if ($infilter) { $a += "--infilter=$infilter" }
+            $a += @('--convert-to', $filter, '--outdir', $out.FullName, (Resolve-Path $file).Path)
+            $p = Start-Process $soffice -ArgumentList ($a | ForEach-Object { '"' + $_ + '"' }) -Wait -PassThru
+            $made = Join-Path $out.FullName ([IO.Path]::GetFileNameWithoutExtension($file) + ".$ext")
+            if ($p.ExitCode -ne 0 -or -not (Test-Path $made)) { throw "falhou: $file → $ext (código $($p.ExitCode))" }
+            Write-Host "ok $file → $ext ($((Get-Item $made).Length) bytes)"
+            return $made
+          }
+          $pdf = Conv 'teste/carta.docx' 'pdf' 'pdf'
+          python modulos/teste/conferir.py pdf $pdf 'ação e coração'
+          if ($LASTEXITCODE -ne 0) { throw 'docx → pdf não confere' }
+          $pdf = Conv 'teste/planilha.xlsx' 'pdf' 'pdf'
+          python modulos/teste/conferir.py pdf $pdf 'Maçã'
+          if ($LASTEXITCODE -ne 0) { throw 'xlsx → pdf não confere' }
+          $pdf = Conv 'teste/slides.pptx' 'pdf' 'pdf'
+          python modulos/teste/conferir.py pdf $pdf 'Apresentação'
+          if ($LASTEXITCODE -ne 0) { throw 'pptx → pdf não confere' }
+          Conv 'teste/carta.docx' 'odt' 'odt' | Out-Null
+          Conv 'teste/carta.docx' 'txt:Text (encoded):UTF8' 'txt' | Out-Null
+          Conv 'teste/planilha.xlsx' 'csv:Text - txt - csv (StarCalc):44,34,76,1' 'csv' | Out-Null
+          Conv 'teste/slides.pptx' 'odp' 'odp' | Out-Null
+          Conv 'teste/relatório.pdf' 'odt:writer8' 'odt' 'writer_pdf_import' | Out-Null
+          tar.exe -a -c -f "pronto/modulo-documentos-$env:VER_DOCUMENTOS.zip" -C $env:LO_ROOT .
+          if ($LASTEXITCODE -ne 0) { throw 'não deu para compactar' }
+
+      # -------------------------------------------------------------- publicar
+      - name: Publicar na release "modulos"
+        shell: pwsh
+        run: |
+          $old = @{}
+          if (Test-Path pronto/modulos.json) {
+            foreach ($m in (Get-Content pronto/modulos.json -Raw | ConvertFrom-Json).modules) { $old[$m.id] = $m }
+          }
+          $list = @()
+          $upload = @()
+          foreach ($id in 'pdf-word', 'documentos') {
+            $ver = (Get-Content "modulos/$id/versao.txt" -Raw).Trim()
+            $zip = "pronto/modulo-$id-$ver.zip"
+            if (Test-Path $zip) {
+              $f = Get-Item $zip
+              $list += [ordered]@{ id = $id; version = $ver; file = $f.Name; size = $f.Length; sha256 = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() }
+              $upload += $zip
+              Write-Host ("{0}: {1:N1} MB" -f $f.Name, ($f.Length / 1MB))
+            } elseif ($old[$id]) {
+              $m = $old[$id]
+              $list += [ordered]@{ id = $m.id; version = $m.version; file = $m.file; size = $m.size; sha256 = $m.sha256 }
+            }
+          }
+          if ($upload.Count -eq 0) { Write-Host 'Nenhum módulo mudou; nada a publicar.'; exit 0 }
+          [ordered]@{ modules = $list } | ConvertTo-Json -Depth 5 | Out-File -Encoding utf8NoBOM pronto/modulos.json
+          Get-Content pronto/modulos.json
+          gh release view modulos *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create modulos --target $env:GITHUB_SHA --title 'Módulos do FiLume' --prerelease --latest=false `
+              --notes 'Pacotes opcionais que o FiLume baixa quando você pede (Ajustes → Módulos). Não é uma versão do programa: não precisa baixar nada daqui na mão.'
+            if ($LASTEXITCODE -ne 0) { throw 'não deu para criar a release' }
+          }
+          # Primeiro os pacotes, por último a lista que aponta para eles.
+          gh release upload modulos @upload --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'falha ao enviar os pacotes' }
+          gh release upload modulos pronto/modulos.json --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'falha ao enviar a lista' }
+          # Pacotes de versões antigas saem.
+          $keep = @($list | ForEach-Object { $_.file }) + 'modulos.json'
+          foreach ($a in (gh api "repos/$env:GH_REPO/releases/tags/modulos" -q '.assets[].name')) {
+            if ($keep -notcontains $a) { gh release delete-asset modulos $a -y }
+          }

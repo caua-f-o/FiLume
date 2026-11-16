@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import 'ffmpeg.dart';
+import 'modules.dart';
 
 /// Conversão de documentos de escritório (Word, Excel, PowerPoint, OpenDocument).
 ///
@@ -13,22 +14,47 @@ import 'ffmpeg.dart';
 /// computador: o LibreOffice ou o Microsoft Office. Sem nenhum dos dois, sobram
 /// as conversões simples feitas aqui mesmo (texto → PDF, Word → texto).
 class OfficeTools {
-  OfficeTools({this.soffice, this.msWord = false, this.msExcel = false, this.msPowerPoint = false});
+  OfficeTools({
+    this.soffice,
+    this.sofficeIsModule = false,
+    this.pdf2docx,
+    this.msWord = false,
+    this.msExcel = false,
+    this.msPowerPoint = false,
+    this.wordVersion,
+  });
 
-  /// Caminho do soffice (LibreOffice), se instalado.
+  /// Caminho do soffice (LibreOffice instalado ou o do módulo "Documentos").
   final String? soffice;
+  final bool sofficeIsModule;
+
+  /// Conversor dedicado de PDF → Word (módulo "PDF → Word"), se instalado.
+  final String? pdf2docx;
   final bool msWord, msExcel, msPowerPoint;
+
+  /// Versão do Word (12 = 2007, 14 = 2010, 15 = 2013…), quando deu para descobrir.
+  final int? wordVersion;
+
+  /// O Word só abre PDF a partir do 2013.
+  bool get wordOpensPdf => msWord && (wordVersion == null || wordVersion! >= 15);
+
+  /// Dá para fazer PDF → Word (DOCX) aqui?
+  bool get pdfToDocx => pdf2docx != null || soffice != null || wordOpensPdf;
+
+  /// Dá para fazer PDF → ODT aqui?
+  bool get pdfToOdt => soffice != null || wordOpensPdf;
 
   bool get any => soffice != null || msWord || msExcel || msPowerPoint;
 
   String get label => [
         if (msWord || msExcel || msPowerPoint) 'Microsoft Office',
-        if (soffice != null) 'LibreOffice',
+        if (soffice != null) sofficeIsModule ? 'módulo Documentos' : 'LibreOffice',
       ].join(' e ');
 
   static Future<OfficeTools> locate() async {
     String? soffice;
     final env = Platform.environment;
+    final moduleOffice = moduleEntry(officeModule);
     final candidates = <String>[
       if (env['FILUME_SOFFICE'] case final String custom) custom,
       if (Platform.isWindows) ...[
@@ -39,6 +65,8 @@ class OfficeTools {
         '/usr/local/bin/soffice',
         '/Applications/LibreOffice.app/Contents/MacOS/soffice',
       ],
+      // O LibreOffice completo, se a pessoa tem, vem antes do módulo (que é enxuto).
+      if (moduleOffice != null) moduleOffice,
     ];
     for (final c in candidates) {
       if (File(c).existsSync()) {
@@ -46,7 +74,10 @@ class OfficeTools {
         break;
       }
     }
+    final customP2d = env['FILUME_PDF2DOCX'];
+    final pdf2docx = customP2d != null && File(customP2d).existsSync() ? customP2d : moduleEntry(pdfWordModule);
     var word = false, excel = false, ppt = false;
+    int? wordVersion;
     if (Platform.isWindows && env['FILUME_NO_MSOFFICE'] == null) {
       Future<bool> com(String id) async {
         try {
@@ -61,17 +92,34 @@ class OfficeTools {
       word = found[0];
       excel = found[1];
       ppt = found[2];
+      if (word) {
+        try {
+          // HKCR\Word.Application\CurVer vale algo como "Word.Application.12".
+          final r = await Process.run('reg', ['query', r'HKCR\Word.Application\CurVer', '/ve']).timeout(const Duration(seconds: 4));
+          wordVersion = int.tryParse(RegExp(r'Word\.Application\.(\d+)').firstMatch(r.stdout.toString())?[1] ?? '');
+        } catch (_) {}
+      }
     }
-    return OfficeTools(soffice: soffice, msWord: word, msExcel: excel, msPowerPoint: ppt);
+    return OfficeTools(
+      soffice: soffice,
+      sofficeIsModule: soffice != null && soffice == moduleOffice,
+      pdf2docx: pdf2docx,
+      msWord: word,
+      msExcel: excel,
+      msPowerPoint: ppt,
+      wordVersion: wordVersion,
+    );
   }
 
   /// Converte [input] para [ext], gravando em [out]. [family] é "doc", "sheet",
   /// "slides" ou "pdf" (origem). Tenta cada programa disponível, na ordem em
   /// que costuma dar o melhor resultado, e só falha se todos falharem.
-  Future<void> convert(FfRun run, String input, String out, String ext, String family) async {
+  Future<void> convert(FfRun run, String input, String out, String ext, String family,
+      {void Function(double fraction, String stage)? onProgress}) async {
     final srcExt = p.extension(input).toLowerCase().replaceFirst('.', '');
+    if (family == 'pdf') return _fromPdf(run, input, out, ext, onProgress);
     final ms = switch (family) {
-      'doc' || 'pdf' => msWord,
+      'doc' => msWord,
       'sheet' => msExcel,
       'slides' => msPowerPoint,
       _ => false,
@@ -85,8 +133,12 @@ class OfficeTools {
       if (ms && !preferMs) () => _msOffice(run, input, out, ext, family),
     ];
     if (engines.isEmpty) {
-      throw FfError('Para converter este tipo de arquivo é preciso ter o LibreOffice (gratuito) ou o Microsoft Office instalado.');
+      throw FfError('Para converter este tipo de arquivo, baixe o módulo "Documentos do Office" (ou tenha o LibreOffice ou o Microsoft Office instalado).');
     }
+    await _firstThatWorks(engines, out);
+  }
+
+  Future<void> _firstThatWorks(List<Future<void> Function()> engines, String out) async {
     final errors = <String>[];
     for (final e in engines) {
       try {
@@ -103,6 +155,62 @@ class OfficeTools {
       } catch (_) {}
     }
     throw FfError('Não foi possível converter este arquivo.', errors.join('\n'));
+  }
+
+  // ----------------------------------------------------------------- PDF → Word
+
+  /// PDF → DOCX/ODT. O conversor dedicado (módulo) remonta parágrafos e tabelas;
+  /// o Word (2013 em diante) e o LibreOffice ficam como alternativas.
+  Future<void> _fromPdf(FfRun run, String input, String out, String ext, void Function(double, String)? onProgress) async {
+    final p2d = pdf2docx;
+    final engines = <Future<void> Function()>[
+      if (p2d != null && ext == 'docx') () => _pdf2docx(run, p2d, input, out, onProgress),
+      if (p2d != null && ext != 'docx' && soffice != null)
+        () async {
+          // O conversor dedicado só grava DOCX; o LibreOffice passa para o formato pedido.
+          final work = await Directory.systemTemp.createTemp('filume_p2d_');
+          try {
+            final docx = p.join(work.path, '${p.basenameWithoutExtension(input)}.docx');
+            await _pdf2docx(run, p2d, input, docx, (f, s) => onProgress?.call(f * 0.8, s));
+            onProgress?.call(0.85, 'Gravando');
+            await _libre(run, docx, out, ext, 'doc');
+          } finally {
+            try {
+              await work.delete(recursive: true);
+            } catch (_) {}
+          }
+        },
+      if (wordOpensPdf) () => _msOffice(run, input, out, ext, 'pdf'),
+      if (soffice != null) () => _libre(run, input, out, ext, 'pdf'),
+    ];
+    if (engines.isEmpty) {
+      throw FfError(msWord
+          ? 'O Word deste computador${wordVersion == 12 ? ' (2007)' : wordVersion == 14 ? ' (2010)' : ''} não abre PDF: isso só existe a partir do Word 2013. '
+              'Baixe o módulo "PDF → Word" para fazer esta conversão.'
+          : 'Para PDF → Word é preciso baixar o módulo "PDF → Word".');
+    }
+    await _firstThatWorks(engines, out);
+  }
+
+  static final _p2dPage = RegExp(r'\((\d+)/(\d+)\) Page');
+
+  Future<void> _pdf2docx(FfRun run, String exe, String input, String out, void Function(double, String)? onProgress) async {
+    var creating = false;
+    String? reason;
+    final code = await run.exec(exe, [p.absolute(input), p.absolute(out)], onStdoutLine: (line) {
+      if (line.startsWith('ERRO: ')) reason = line.substring(6).trim();
+      if (line.contains('[4/4]')) creating = true;
+      final m = _p2dPage.firstMatch(line);
+      if (m == null) return;
+      final page = int.parse(m[1]!), total = int.parse(m[2]!);
+      if (total <= 0) return;
+      // Ler as páginas é a parte demorada; montar o documento, a final.
+      final f = creating ? 0.7 + 0.3 * (page - 1) / total : 0.05 + 0.65 * (page - 1) / total;
+      onProgress?.call(f, '${creating ? 'Montando' : 'Lendo'} a página $page de $total');
+    });
+    if (code != 0 || !File(out).existsSync()) {
+      throw FfError('O módulo PDF → Word não conseguiu converter este arquivo.', reason ?? run.errorTail.join('\n'));
+    }
   }
 
   // ---------------------------------------------------------------- LibreOffice
@@ -177,10 +285,19 @@ $app = New-Object -ComObject Word.Application
 try {
   $app.Visible = $false
   $app.DisplayAlerts = 0
+  $major = 0
+  try { $major = [int](([string]$app.Version).Split('.')[0]) } catch {}
+  if ($args[0].ToLower().EndsWith('.pdf') -and $major -gt 0 -and $major -lt 15) { throw 'Este Word nao abre PDF (so a partir do Word 2013).' }
   $doc = $app.Documents.Open($args[0], $false, $true, $false)
   try {
     $fmt = [int]$args[2]
-    if ($fmt -eq 7) { $doc.SaveAs2($args[1], $fmt, $false, '', $false, '', $false, $false, $false, $false, $false, 65001) }
+    # O Word 2007 não tem SaveAs2 (e só grava PDF com o SP2 ou o suplemento da Microsoft).
+    if ($major -gt 0 -and $major -lt 14) {
+      $path = [string]$args[1]; $no = $false; $empty = ''; $utf8 = 65001
+      if ($fmt -eq 7) { $doc.SaveAs([ref]$path, [ref]$fmt, [ref]$no, [ref]$empty, [ref]$no, [ref]$empty, [ref]$no, [ref]$no, [ref]$no, [ref]$no, [ref]$no, [ref]$utf8) }
+      else { $doc.SaveAs([ref]$path, [ref]$fmt) }
+    }
+    elseif ($fmt -eq 7) { $doc.SaveAs2($args[1], $fmt, $false, '', $false, '', $false, $false, $false, $false, $false, 65001) }
     else { $doc.SaveAs2($args[1], $fmt) }
   } finally { $doc.Close(0) }
 } finally {

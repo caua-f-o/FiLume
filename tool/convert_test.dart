@@ -22,7 +22,7 @@ void check(String label, bool ok, [String extra = '']) {
 late FfTools tools;
 late ConvCaps caps;
 
-Future<JobResult?> conv(String path, String ext, {UniversalSettings? s, MediaInfo? info, bool expectError = false, String? group}) async {
+Future<JobResult?> conv(String path, String ext, {UniversalSettings? s, MediaInfo? info, bool expectError = false, String? group, List<String>? stages}) async {
   final settings = s ?? UniversalSettings();
   final targets = targetsFor(path, caps, info: info);
   final to = targets.where((t) => t.ext == ext && (group == null || t.group == group)).firstOrNull;
@@ -32,7 +32,7 @@ Future<JobResult?> conv(String path, String ext, {UniversalSettings? s, MediaInf
   }
   final job = buildUniversalJob(path: path, to: to, settings: settings, caps: caps, info: info);
   try {
-    final r = await job.body(JobCtx(tools, FfRun(), (_, __, ___) {}));
+    final r = await job.body(JobCtx(tools, FfRun(), (_, stage, ___) { if (stage != null) stages?.add(stage); }));
     if (expectError) check('${p.basename(path)} → $ext devia recusar', false);
     return r;
   } catch (e) {
@@ -293,6 +293,18 @@ Future<void> main() async {
   await conv('$d/carta.docx', 'pdf', expectError: true);
   caps = saved;
 
+  if (caps.office.pdf2docx != null) {
+    await writeTextPdf('Relatório de teste\n\nPrimeiro parágrafo com ação e coração.\nSegunda linha do texto.', '$d/para_word.pdf');
+    final stages = <String>[];
+    final w = await conv('$d/para_word.pdf', 'docx', s: UniversalSettings()..outDir = '$d/modulo', stages: stages);
+    final text = w == null ? null : docxText(File(w.revealPath).readAsBytesSync());
+    check('PDF → Word pelo módulo', text != null && text.contains('ação e coração') && text.contains('Segunda linha'), jsonEncode(text));
+    check('PDF → Word pelo módulo: informa a página', stages.any((x) => x.contains('página 1 de 1')), stages.join(' | '));
+    await File('$d/quebrado.pdf').writeAsString('isto não é um PDF');
+    await conv('$d/quebrado.pdf', 'docx', expectError: true);
+  } else {
+    print('AVISO: módulo PDF → Word não instalado (FILUME_PDF2DOCX); a conversão por ele não rodou aqui.');
+  }
   if (caps.office.any) {
     File('$d/tabela.csv').writeAsStringSync('nome,valor\nmaçã,3\npão,5\n');
     File('$d/oficio.txt').writeAsStringSync('Primeiro parágrafo: ação e reação.\n\nSegundo parágrafo.\n');

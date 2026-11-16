@@ -95,7 +95,7 @@ jobs:
           dart run tool/editor_test.dart
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Teste do conversor e do atualizador (bloqueia o build)
+      - name: Teste do conversor, do atualizador e dos módulos (bloqueia o build)
         shell: pwsh
         run: |
           $env:FILUME_FFMPEG_DIR = (Resolve-Path 'build/windows/x64/runner/Release/ffmpeg').Path
@@ -103,6 +103,8 @@ jobs:
           dart run tool/convert_test.dart
           if ($LASTEXITCODE -ne 0) { exit 1 }
           dart run tool/update_test.dart
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dart run tool/modules_test.dart
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Empacotar

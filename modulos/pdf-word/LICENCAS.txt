@@ -1,0 +1,17 @@
+Módulo "PDF → Word" do FiLume
+https://github.com/caua-f-o/FiLume (pasta modulos/pdf-word)
+
+Este pacote reúne programas de código aberto de terceiros:
+
+  pdf2docx        MIT                https://github.com/ArtifexSoftware/pdf2docx
+  PyMuPDF / MuPDF GNU AGPL 3.0       https://github.com/pymupdf/PyMuPDF
+  python-docx     MIT                https://github.com/python-openxml/python-docx
+  OpenCV          Apache 2.0         https://github.com/opencv/opencv
+  NumPy           BSD 3-Clause       https://numpy.org
+  fontTools       MIT                https://github.com/fonttools/fonttools
+  lxml            BSD 3-Clause       https://lxml.de
+  Python          PSF License        https://www.python.org
+
+O código-fonte de cada um está nos endereços acima; o roteiro que os junta
+(filume_pdf2docx.py) e a receita de montagem estão no repositório do FiLume.
+Por incluir o PyMuPDF, o pacote como um todo é distribuído sob a GNU AGPL 3.0.

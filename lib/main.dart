@@ -14,6 +14,7 @@ import 'ui/settings_page.dart';
 import 'ui/theme.dart';
 import 'ui/preview_player.dart';
 import 'ui/title_bar.dart';
+import 'ui/modules_ui.dart';
 import 'ui/update_ui.dart';
 import 'conv_app/conv_app.dart';
 import 'ui/tool_page.dart';
@@ -216,7 +217,7 @@ class _ShellState extends State<Shell> {
                               'video' => ToolPage(state: state, module: videoModule),
                               'audio' => ToolPage(state: state, module: audioModule),
                               'image' => ToolPage(state: state, module: imageModule),
-                              'settings' => SettingsPage(prefs: state.prefs, updates: UpdateSection(state: state)),
+                              'settings' => SettingsPage(prefs: state.prefs, updates: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [ModulesSection(state: state), const SizedBox(height: 16), UpdateSection(state: state)])),
                               _ => const SizedBox.shrink(),
                             },
                           ),

@@ -137,13 +137,13 @@ ReleaseInfo? pickRelease(List<dynamic> releases, {required bool beta}) {
   return best;
 }
 
-HttpClient _client() => HttpClient()
+HttpClient updateHttpClient() => HttpClient()
   ..connectionTimeout = const Duration(seconds: 15)
   ..userAgent = 'FiLume/$appVersion';
 
 /// Consulta o repositório. [api] existe para os testes apontarem para outro lugar.
 Future<ReleaseInfo?> fetchLatest({required bool beta, String? api}) async {
-  final client = _client();
+  final client = updateHttpClient();
   try {
     final req = await client.getUrl(Uri.parse(api ?? 'https://api.github.com/repos/$updateRepo/releases?per_page=40'));
     req.headers.set('Accept', 'application/vnd.github+json');
@@ -262,7 +262,7 @@ Future<void> downloadRelease(
   void Function(int received, int total)? onProgress,
   bool Function()? canceled,
 }) async {
-  final client = _client();
+  final client = updateHttpClient();
   IOSink? sink;
   try {
     final req = await client.getUrl(Uri.parse(release.assetUrl));
@@ -333,8 +333,8 @@ bool canWriteInstallDir([String? dir]) {
   }
 }
 
-/// Descompacta o pacote em [dest] e devolve a pasta que contém o FiLume.exe.
-Future<String> extractRelease(String zip, String dest) async {
+/// Descompacta [zip] em [dest].
+Future<void> unzipTo(String zip, String dest) async {
   await Directory(dest).create(recursive: true);
   ProcessResult? r;
   try {
@@ -347,6 +347,11 @@ Future<String> extractRelease(String zip, String dest) async {
     final ps = await runPowershell(r'Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force', [zip, dest]);
     if (ps.exitCode != 0) throw UpdateError('Não foi possível descompactar o pacote baixado.');
   }
+}
+
+/// Descompacta o pacote em [dest] e devolve a pasta que contém o FiLume.exe.
+Future<String> extractRelease(String zip, String dest) async {
+  await unzipTo(zip, dest);
   String? root;
   bool has(String dir) => File(p.join(dir, 'FiLume.exe')).existsSync();
   if (has(dest)) {

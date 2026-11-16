@@ -1,0 +1,10 @@
+Módulo "Documentos do Office" do FiLume
+https://github.com/caua-f-o/FiLume (pasta modulos/documentos)
+
+Este pacote é o LibreOffice (https://www.libreoffice.org), da The Document
+Foundation, sem a ajuda, as galerias, os modelos, os dicionários e os idiomas
+que a conversão de arquivos não usa. Nenhum arquivo do programa foi alterado.
+
+O LibreOffice é distribuído sob a Mozilla Public License 2.0; o código-fonte
+está em https://www.libreoffice.org/download/download-libreoffice/ e os avisos
+de licença completos acompanham o pacote (pasta program e arquivos LICENSE).

@@ -139,7 +139,8 @@ class ConvCaps {
   }
 
   bool officeFor(FileKind kind) => switch (kind) {
-        FileKind.doc || FileKind.pdf => office.soffice != null || office.msWord,
+        FileKind.doc => office.soffice != null || office.msWord,
+        FileKind.pdf => office.pdfToDocx,
         FileKind.sheet => office.soffice != null || office.msExcel,
         FileKind.slides => office.soffice != null || office.msPowerPoint,
         _ => false,
@@ -182,7 +183,8 @@ List<OutFormat> targetsFor(String path, ConvCaps caps, {MediaInfo? info}) {
     case FileKind.pdf:
       list = [
         if (caps.pdf?.gs != null) ...[_fJpg, _fPng, const OutFormat('txt', 'Texto (TXT)')],
-        if (caps.officeFor(FileKind.pdf)) ...const [OutFormat('docx', 'Word (DOCX)'), OutFormat('odt', 'OpenDocument (ODT)')],
+        if (caps.office.pdfToDocx) const OutFormat('docx', 'Word (DOCX)'),
+        if (caps.office.pdfToOdt) const OutFormat('odt', 'OpenDocument (ODT)'),
       ];
     case FileKind.doc:
       list = caps.officeFor(kind)
@@ -228,11 +230,11 @@ String? missingNote(String path, ConvCaps caps) {
   if (kind == null) return 'Tipo de arquivo que o conversor ainda não conhece.';
   final office = kind == FileKind.doc || kind == FileKind.sheet || kind == FileKind.slides;
   if (office && !caps.officeFor(kind)) {
-    return 'Para converter ${kind.label.toLowerCase()}s do Office é preciso ter o LibreOffice (gratuito) ou o Microsoft Office '
-        'instalado. O FiLume usa o programa por baixo dos panos, sem abrir janela.';
+    return 'Para converter este tipo de arquivo, baixe o módulo "Documentos do Office" '
+        '(ou tenha o LibreOffice ou o Microsoft Office instalado).';
   }
   if (kind == FileKind.pdf && !caps.officeFor(kind)) {
-    return 'Para PDF → Word é preciso ter o LibreOffice (gratuito) ou o Microsoft Word instalado.';
+    return 'Para PDF → Word, baixe o módulo "PDF → Word".';
   }
   return null;
 }
@@ -756,8 +758,8 @@ Future<JobResult> _convertPdf(JobCtx ctx, String path, MediaInfo? info, OutForma
   if (to.ext == 'docx' || to.ext == 'odt') {
     final out = await _outPath(path, to, s);
     try {
-      ctx.report(0.15, stage: 'Convertendo');
-      await caps.office.convert(ctx.run, path, out, to.ext, 'pdf');
+      ctx.report(0.03, stage: 'Convertendo');
+      await caps.office.convert(ctx.run, path, out, to.ext, 'pdf', onProgress: (f, stage) => ctx.report(f, stage: stage));
       return JobResult(_sizes(path, out), out,
           warning: 'PDF não guarda parágrafos nem tabelas de verdade: confira a formatação do documento gerado.');
     } catch (_) {

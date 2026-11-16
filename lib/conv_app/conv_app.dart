@@ -13,6 +13,7 @@ import '../core/format.dart';
 import '../core/heif.dart';
 import '../core/job.dart';
 import '../core/launch.dart';
+import '../core/modules.dart';
 import '../core/pdf.dart' show PageFit;
 import '../core/state.dart';
 import '../core/streams.dart' show ReLevel;
@@ -23,6 +24,7 @@ import '../ui/process_button.dart';
 import '../ui/settings_page.dart';
 import '../ui/theme.dart';
 import '../ui/title_bar.dart';
+import '../ui/modules_ui.dart';
 import '../ui/update_ui.dart';
 
 /// FiLume Conversor: o app dedicado que leva qualquer arquivo para outro
@@ -137,6 +139,8 @@ class ConvSession extends ChangeNotifier {
   ConvSession(this.state) {
     settings.outDir = state.prefs.convOutDir;
     state.queue.addListener(notifyListeners);
+    _modulesSeen = state.modules.revision;
+    state.modules.addListener(_modulesChanged);
   }
   final AppState state;
   final List<ConvItem> items = [];
@@ -152,9 +156,34 @@ class ConvSession extends ChangeNotifier {
   /// Último formato escolhido para cada tipo (vale para os próximos arquivos).
   final Map<FileKind, String> preferred = {};
   bool _probing = false;
+  int _modulesSeen = 0;
+
+  /// Ofertas de módulo que a pessoa dispensou nesta sessão.
+  final Set<String> dismissedOffers = {};
+
+  void dismissOffer(String id) {
+    dismissedOffers.add(id);
+    notifyListeners();
+  }
+
+  /// Um módulo foi instalado ou removido: os formatos possíveis mudam.
+  Future<void> _modulesChanged() async {
+    final rev = state.modules.revision;
+    if (rev == _modulesSeen) return;
+    _modulesSeen = rev;
+    final tools = state.tools;
+    if (tools == null || !capsReady) return;
+    final fresh = await ConvCaps.detect(tools, state.pdf, encoders: caps?.encoders);
+    caps = fresh;
+    for (final i in items) {
+      if (i.job == null || i.job!.finished) _retarget(i);
+    }
+    notifyListeners();
+  }
 
   @override
   void dispose() {
+    state.modules.removeListener(_modulesChanged);
     state.queue.removeListener(notifyListeners);
     super.dispose();
   }
@@ -456,7 +485,7 @@ class _ConvShellState extends State<ConvShell> {
                     ),
                     Expanded(
                       child: _settings
-                          ? SettingsPage(prefs: state.prefs, mainApp: false, updates: UpdateSection(state: state))
+                          ? SettingsPage(prefs: state.prefs, mainApp: false, updates: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [ModulesSection(state: state), const SizedBox(height: 16), UpdateSection(state: state)]))
                           : ListenableBuilder(listenable: Listenable.merge([session, state]), builder: (context, _) => _work(context)),
                     ),
                   ],
@@ -562,6 +591,7 @@ class _ConvShellState extends State<ConvShell> {
           ],
         ),
         const SizedBox(height: 6),
+        ..._offers(),
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.only(right: 6, bottom: 4),
@@ -572,6 +602,37 @@ class _ConvShellState extends State<ConvShell> {
         ),
       ],
     );
+  }
+
+  /// Módulos que resolveriam o que falta para os arquivos da lista.
+  List<Widget> _offers() {
+    final caps = session.caps;
+    if (caps == null || !session.capsReady) return const [];
+    final kinds = {for (final i in session.items) i.kind};
+    final o = caps.office;
+    final out = <Widget>[];
+    if (kinds.contains(FileKind.pdf) && o.pdf2docx == null && !session.dismissedOffers.contains(pdfWordModule.id)) {
+      out.add(ModuleOffer(
+        state: state,
+        spec: pdfWordModule,
+        text: !o.pdfToDocx
+            ? (o.msWord
+                ? 'O Word deste computador não abre PDF (isso só existe a partir do Word 2013). Com o módulo, o PDF vira um documento do Word editável.'
+                : 'Com ele, o PDF vira um documento do Word editável, com parágrafos, tabelas e imagens.')
+            : 'Deixa o PDF → Word bem mais fiel: remonta parágrafos e tabelas em vez de espalhar o texto em caixas soltas.',
+        onDismiss: () => session.dismissOffer(pdfWordModule.id),
+      ));
+    }
+    const officeKinds = [FileKind.doc, FileKind.sheet, FileKind.slides];
+    if (officeKinds.any((k) => kinds.contains(k) && !caps.officeFor(k)) && !session.dismissedOffers.contains(officeModule.id)) {
+      out.add(ModuleOffer(
+        state: state,
+        spec: officeModule,
+        text: 'Para converter Word, Excel e PowerPoint sem ter um pacote de escritório compatível instalado.',
+        onDismiss: () => session.dismissOffer(officeModule.id),
+      ));
+    }
+    return out;
   }
 
   Widget _row(BuildContext context, ConvItem i, ColorScheme cs, ThemeData t) {
@@ -847,8 +908,8 @@ class _ConvShellState extends State<ConvShell> {
                     InfoBox(
                       officeKinds.every(caps.officeFor)
                           ? 'Documentos do Office são convertidos pelo ${caps.office.label} deste computador, sem abrir janela.'
-                          : 'Para converter Word, Excel e PowerPoint é preciso ter o LibreOffice (gratuito) ou o Microsoft Office '
-                              'instalado. Sem eles, o FiLume só faz texto → PDF e Word → texto.',
+                          : 'Para converter Word, Excel e PowerPoint, baixe o módulo "Documentos do Office" (aparece acima da lista e nos Ajustes). '
+                              'Sem ele, o FiLume só faz texto → PDF e Word → texto.',
                       icon: officeKinds.every(caps.officeFor) ? Icons.info_outline : Icons.warning_amber_outlined,
                     ),
                   ],

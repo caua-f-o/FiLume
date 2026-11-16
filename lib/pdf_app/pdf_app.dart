@@ -24,6 +24,7 @@ import '../ui/process_button.dart';
 import '../ui/settings_page.dart';
 import '../ui/theme.dart';
 import '../ui/title_bar.dart';
+import '../ui/modules_ui.dart';
 import '../ui/update_ui.dart';
 import 'compare_view.dart';
 import 'editor_view.dart';
@@ -337,7 +338,7 @@ class _PdfShellState extends State<PdfShell> {
                           : _tool == _editTool
                               ? EditorView(state: state, session: _editor)
                           : _tool < 0
-                          ? SettingsPage(prefs: state.prefs, mainApp: false, extra: _FoldersSection(prefs: state.prefs), updates: UpdateSection(state: state))
+                          ? SettingsPage(prefs: state.prefs, mainApp: false, extra: _FoldersSection(prefs: state.prefs), updates: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [ModulesSection(state: state), const SizedBox(height: 16), UpdateSection(state: state)]))
                           : ListenableBuilder(listenable: state, builder: (context, _) => _workArea(context)),
                     ),
                   ],

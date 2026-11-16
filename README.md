@@ -82,8 +82,8 @@ Aplicativo dedicado (`FiLume Conversor.exe`, na mesma pasta). Solte qualquer mis
 | **Fotos** (JPG, PNG, WebP, AVIF, **HEIC/HEIF**, TIFF, BMP, GIF, PSD, TGA…) | JPG, PNG, WebP, AVIF, JPEG XL, TIFF, BMP, GIF, ICO, PDF (uma por arquivo ou todas num PDF só). HEIC como saída quando o Windows tem o codificador HEVC. |
 | **Vídeos** (MP4, MKV, MOV, WebM, AVI, WMV, FLV, MPG, TS…) | MP4, MKV, MOV, WebM, AVI, GIF animado, ou só o áudio. |
 | **Áudios** (MP3, M4A, WAV, FLAC, OGG, Opus, WMA, AIFF…) | MP3, M4A, Opus, OGG, FLAC, WAV, AIFF, AC-3, WMA. |
-| **PDF** | Imagens (JPG/PNG), texto, Word (DOCX/ODT). |
-| **Word, Excel, PowerPoint**, OpenDocument, RTF, HTML, TXT, CSV | PDF e os outros formatos da mesma família. Usa o LibreOffice ou o Microsoft Office instalado, sem abrir janela. |
+| **PDF** | Imagens (JPG/PNG), texto, Word (DOCX/ODT). O Word fica melhor com o módulo "PDF → Word" (baixado pelo próprio app). |
+| **Word, Excel, PowerPoint**, OpenDocument, RTF, HTML, TXT, CSV | PDF e os outros formatos da mesma família. Usa o módulo "Documentos do Office" (baixado pelo próprio app), o LibreOffice ou o Microsoft Office instalado, sem abrir janela. |
 | **Legendas** (SRT, VTT, ASS) | SRT, WebVTT, ASS. |
 
 ### 🖼️ Imagem

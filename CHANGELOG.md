@@ -3,6 +3,18 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.11] — 2026-11-16
+
+### Adicionado
+- **Módulos** (Ajustes → Módulos, nos três aplicativos): ferramentas grandes que nem todo mundo usa deixam de pesar no pacote. Você baixa só as que quiser, direto do repositório; o FiLume confere o arquivo antes de instalar. Os módulos ficam numa pasta própria e continuam instalados quando o FiLume é atualizado. Dá para atualizar e remover cada um.
+  - **PDF → Word**: conversor dedicado que remonta parágrafos, tabelas e imagens num documento do Word editável, sem precisar de Word nem LibreOffice.
+  - **Documentos do Office**: converte Word, Excel e PowerPoint (e os formatos abertos) entre si e para PDF sem ter pacote de escritório instalado.
+- Conversor: quando falta um módulo para os arquivos da lista, ele é oferecido ali mesmo, com o download em um clique. PDF → Word mostra o andamento página a página.
+
+### Corrigido
+- Conversor: com Word 2007 ou 2010 instalado, PDF → Word era oferecido e falhava (esses Words não abrem PDF). Agora a opção só aparece quando há como converter, e o aviso explica o que falta.
+- Conversor: Word 2007 não conseguia gravar nenhum formato (usava um comando que só existe do Word 2010 em diante).
+
 ## [1.5.0-beta.10] — 2026-11-16
 
 ### Adicionado
