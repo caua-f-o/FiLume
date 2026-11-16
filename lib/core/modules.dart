@@ -35,7 +35,7 @@ const pdfWordModule = ModuleSpec(
   name: 'PDF → Word',
   summary: 'Transforma PDF em documento do Word editável, mantendo parágrafos, tabelas e imagens.',
   entry: 'filume-pdf2docx.exe',
-  approxMb: 60,
+  approxMb: 134,
 );
 
 const officeModule = ModuleSpec(
@@ -43,7 +43,7 @@ const officeModule = ModuleSpec(
   name: 'Documentos do Office',
   summary: 'Converte Word, Excel e PowerPoint (e os formatos abertos) entre si e para PDF, sem precisar de Office instalado.',
   entry: 'program/soffice.exe',
-  approxMb: 200,
+  approxMb: 185,
 );
 
 const knownModules = [pdfWordModule, officeModule];
