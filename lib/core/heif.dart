@@ -308,7 +308,7 @@ List<String>? heifDecodeArgs(String path, HeifInfo info, Map<int, int> streamOfI
   if (!info.isGrid) {
     final s = streamOfItem[info.primaryId];
     if (s == null) return null;
-    return ['-noautorotate', '-i', path, '-filter_complex', chain('[0:$s]')];
+    return ['-noautorotate', '-display_rotation', '0', '-i', path, '-filter_complex', chain('[0:$s]')];
   }
   final ins = StringBuffer();
   final layout = <String>[];
@@ -319,10 +319,10 @@ List<String>? heifDecodeArgs(String path, HeifInfo info, Map<int, int> streamOfI
     layout.add('${(i % info.cols) * info.tileWidth}_${(i ~/ info.cols) * info.tileHeight}');
   }
   if (info.tileIds.length == 1) {
-    return ['-noautorotate', '-i', path, '-filter_complex', chain(ins.toString())];
+    return ['-noautorotate', '-display_rotation', '0', '-i', path, '-filter_complex', chain(ins.toString())];
   }
   return [
-    '-noautorotate', '-i', path,
+    '-noautorotate', '-display_rotation', '0', '-i', path,
     '-filter_complex',
     '${ins}xstack=inputs=${info.tileIds.length}:layout=${layout.join('|')}[grid];${chain('[grid]')}',
   ];
