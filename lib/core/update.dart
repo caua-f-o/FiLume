@@ -302,6 +302,15 @@ Future<void> downloadRelease(
   }
 }
 
+/// Ambiente para chamar o Windows PowerShell (5.1). Sem o PSModulePath herdado:
+/// quando o FiLume é aberto de dentro do PowerShell 7, essa variável aponta para
+/// os módulos dele e o 5.1 deixa de achar os próprios (certificados, segurança).
+Map<String, String> powershellEnv([Map<String, String> extra = const {}]) => {
+      for (final e in Platform.environment.entries)
+        if (e.key.toUpperCase() != 'PSMODULEPATH') e.key: e.value,
+      ...extra,
+    };
+
 /// Roda um trecho de PowerShell a partir de um arquivo temporário (com
 /// "-Command" os argumentos viram parte do comando, e caminhos com espaço quebram).
 Future<ProcessResult> runPowershell(String script, List<String> args) async {
@@ -310,7 +319,7 @@ Future<ProcessResult> runPowershell(String script, List<String> args) async {
     final f = File(p.join(dir.path, 'cmd.ps1'));
     await f.writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode('[Console]::OutputEncoding = [Text.Encoding]::UTF8\n\$ErrorActionPreference = "Stop"\n$script\n')]);
     return await Process.run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', f.path, ...args],
-        stdoutEncoding: utf8, stderrEncoding: utf8);
+        environment: powershellEnv(), includeParentEnvironment: false, stdoutEncoding: utf8, stderrEncoding: utf8);
   } finally {
     try {
       await dir.delete(recursive: true);

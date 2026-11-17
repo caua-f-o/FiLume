@@ -8,6 +8,7 @@ import 'ffmpeg.dart' show FfError, uniquePath;
 import 'job.dart';
 import 'pdf.dart';
 import 'signature.dart' show signerFromPkcs7;
+import 'update.dart' show powershellEnv;
 
 // Assinatura digital: conferir as assinaturas de um PDF e assinar com um
 // certificado (arquivo .pfx/.p12 ou certificado instalado no Windows,
@@ -98,7 +99,8 @@ Future<ProcessResult> _ps(String script, List<String> args, {Map<String, String>
     return await Process.run(
       'powershell.exe',
       ['-NoProfile', if (!interactive) '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', f.path, ...args],
-      environment: env,
+      environment: powershellEnv(env ?? const {}),
+      includeParentEnvironment: false,
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
     );

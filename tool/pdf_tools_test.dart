@@ -15,6 +15,7 @@ import 'package:filume/core/pdf_inspect.dart';
 import 'package:filume/core/pdf_sign.dart';
 import 'package:filume/core/pdfium.dart';
 import 'package:filume/core/redact_job.dart';
+import 'package:filume/core/update.dart' show powershellEnv;
 import 'package:path/path.dart' as p;
 
 var bad = 0;
@@ -296,7 +297,7 @@ Future<void> main() async {
   String? thumb;
   var haveCert = false;
   if (Platform.isWindows) {
-    final r = await Process.run('powershell.exe', [
+    final r = await Process.run(environment: powershellEnv(), includeParentEnvironment: false, 'powershell.exe', [
       '-NoProfile', '-NonInteractive', '-Command',
       "\$c = New-SelfSignedCertificate -Subject 'CN=José da Silva Teste' -CertStoreLocation Cert:\\CurrentUser\\My -KeyUsage DigitalSignature -KeyAlgorithm RSA -KeyLength 2048 -NotAfter (Get-Date).AddDays(2); "
           "\$pw = ConvertTo-SecureString 'segredo' -AsPlainText -Force; Export-PfxCertificate -Cert \$c -FilePath '$pfx' -Password \$pw | Out-Null; Write-Output \$c.Thumbprint",
@@ -379,7 +380,7 @@ Future<void> main() async {
       await signPdf(tools, src, '$d/pelo_windows.pdf', SignIdentity.store(thumb));
       final ws = await verifySignatures(tools, '$d/pelo_windows.pdf');
       check('assina com um certificado instalado no Windows', ws.length == 1 && ws.first.intact == true, ws.map((c) => '${c.intact} ${c.problem}').join(' | '));
-      await Process.run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "Remove-Item 'Cert:\\CurrentUser\\My\\$thumb' -ErrorAction SilentlyContinue"]);
+      await Process.run(environment: powershellEnv(), includeParentEnvironment: false, 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "Remove-Item 'Cert:\\CurrentUser\\My\\$thumb' -ErrorAction SilentlyContinue"]);
     }
   }
 
