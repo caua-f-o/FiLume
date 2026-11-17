@@ -95,7 +95,15 @@ Future<ProcessResult> _ps(String script, List<String> args, {Map<String, String>
   final dir = await Directory.systemTemp.createTemp('filume_ps_');
   try {
     final f = File(p.join(dir.path, 'cmd.ps1'));
-    await f.writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode('[Console]::OutputEncoding = [Text.Encoding]::UTF8\n\$ErrorActionPreference = "Stop"\n$script\n')]);
+    // O bloco param(...) precisa ser a primeira coisa do script: a preparação vem depois dele.
+    var body = script.trimLeft();
+    var params = '';
+    if (body.startsWith('param(')) {
+      final end = body.indexOf('\n');
+      params = '${body.substring(0, end)}\n';
+      body = body.substring(end + 1);
+    }
+    await f.writeAsBytes([0xEF, 0xBB, 0xBF, ...utf8.encode('$params[Console]::OutputEncoding = [Text.Encoding]::UTF8\n\$ErrorActionPreference = "Stop"\n$body\n')]);
     return await Process.run(
       'powershell.exe',
       ['-NoProfile', if (!interactive) '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', f.path, ...args],
