@@ -94,6 +94,8 @@ jobs:
           $env:FILUME_REQUIRE_PDFIUM = '1'
           dart run tool/editor_test.dart
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          dart run tool/pdf_tools_test.dart
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Teste do conversor, do atualizador e dos módulos (bloqueia o build)
         shell: pwsh
@@ -112,7 +114,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist/FiLume | Out-Null
           Copy-Item build/windows/x64/runner/Release/* dist/FiLume -Recurse
-          # FiLume PDF é o mesmo executável com outro nome; garante que ele está no pacote.
+          # FiPDF é o mesmo executável com outro nome; garante que ele está no pacote (com o nome antigo também).
+          if (-not (Test-Path 'dist/FiLume/FiPDF.exe')) { Copy-Item dist/FiLume/FiLume.exe 'dist/FiLume/FiPDF.exe' }
           if (-not (Test-Path 'dist/FiLume/FiLume PDF.exe')) { Copy-Item dist/FiLume/FiLume.exe 'dist/FiLume/FiLume PDF.exe' }
           if (-not (Test-Path 'dist/FiLume/FiLume Conversor.exe')) { Copy-Item dist/FiLume/FiLume.exe 'dist/FiLume/FiLume Conversor.exe' }
           Get-ChildItem dist/FiLume -Filter *.exe | ForEach-Object { "$($_.Name) $([math]::Round($_.Length/1KB)) KB" }

@@ -752,7 +752,7 @@ final _gsPage = RegExp(r'^Page (\d+)');
 
 Future<JobResult> _convertPdf(JobCtx ctx, String path, MediaInfo? info, OutFormat to, UniversalSettings s, ConvCaps caps) async {
   if (info != null && info.encrypted) {
-    throw FfError('Este PDF é protegido por senha. Remova a senha no FiLume PDF (ferramenta "Senha") primeiro.');
+    throw FfError('Este PDF é protegido por senha. Remova a senha no FiPDF (ferramenta "Senha") primeiro.');
   }
   final pages = info?.pages ?? 0;
   if (to.ext == 'docx' || to.ext == 'odt') {
@@ -783,7 +783,7 @@ Future<JobResult> _convertPdf(JobCtx ctx, String path, MediaInfo? info, OutForma
       await run(['-sDEVICE=txtwrite', '-sOutputFile=${out.replaceAll('%', '%%')}']);
       final empty = (await File(out).readAsString()).trim().isEmpty;
       return JobResult(_sizes(path, out), out,
-          warning: empty ? 'Este PDF não tem texto (deve ser digitalização). Passe o OCR nele no FiLume PDF e converta de novo.' : null);
+          warning: empty ? 'Este PDF não tem texto (deve ser digitalização). Passe o OCR nele no FiPDF e converta de novo.' : null);
     } catch (_) {
       _delete(out);
       rethrow;

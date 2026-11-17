@@ -3,6 +3,32 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.13] — 2026-11-16
+
+### Alterado
+- O **FiLume PDF** passa a se chamar **FiPDF** (`FiPDF.exe`). O executável com o nome antigo continua na pasta, para os atalhos que já existem.
+
+### Adicionado
+- FiPDF → **Tarjar**: esconde informações para valer. O texto, as imagens, os links e os comentários sob a tarja são apagados do arquivo, não só cobertos por um retângulo.
+  - Marque áreas com o mouse ou procure um texto (nome, CPF) para tarjar todas as ocorrências do documento, inclusive em páginas giradas e em digitalizações com OCR.
+  - O que está só em parte sob a tarja (o resto de uma linha, uma foto) é refeito como imagem, já com a tarja, para não sobrar nada legível por baixo.
+  - Depois de gravar, o arquivo é reaberto e conferido: se ainda houver texto sob alguma tarja, nada é entregue.
+  - Opção de apagar título, autor e outros dados do arquivo, e aviso quando o texto tarjado ainda aparece em outro lugar (comentários, marcadores).
+- FiPDF → **Formulário**: preenche campos de texto, caixas de marcar, botões de opção e listas, com acentos, e pode "achatar" o resultado (os valores viram parte da página).
+- FiPDF → **Comentar**: marca-texto, sublinhado, riscado, notas e retângulos, com autor e data. Mostra os comentários que o PDF já tem, apaga os que não servem e exporta a lista em texto.
+- FiPDF → **Medir**: distâncias e áreas sobre a página, em mm, cm, m, polegadas ou pontos, com escala para plantas e mapas. Não altera o arquivo.
+- FiPDF → **Verificar**: confere a acessibilidade (tags, idioma, título, páginas sem texto, descrição das imagens, marcadores) e os pontos principais do PDF/A (fontes embutidas, metadados, perfil de cor, scripts, mídia), com a indicação de como resolver. É uma verificação, não uma certificação.
+
+- FiPDF → **Assinar**: confere as assinaturas digitais (se o documento mudou depois de assinado, se recebeu acréscimos, quem assinou, se o certificado é reconhecido pelo computador) e assina com o seu certificado: arquivo .pfx/.p12 ou o instalado no Windows, inclusive de cartão e token. Carimbo visível opcional, com nome e data. Depois de assinar, o arquivo é conferido antes de ser entregue.
+- FiPDF → **Limpar**: tira o que não aparece na página mas vai junto com o arquivo (autor e programa de origem, scripts, anexos, miniaturas e dados ocultos e, se quiser, comentários e marcadores). Aceita vários PDFs de uma vez.
+
+### Melhorado
+- FiPDF → Organizar e Unir: os marcadores (sumário lateral) agora vão junto para o PDF novo, apontando para as páginas na posição nova. Antes eles se perdiam.
+- FiPDF → Comprimir: quando a compressão normal deixaria o arquivo maior (imagens já leves), o FiPDF tenta reorganizar só a estrutura, sem perda de qualidade, em vez de desistir.
+
+### Créditos
+- As ferramentas novas foram projetadas com base no [PdfCraft](https://github.com/storytold/pdfcraft) (ArtCraft Team e colaboradores, MIT ou Apache 2.0); o código é próprio. Detalhes em `THIRD_PARTY_NOTICES.md`.
+
 ## [1.5.0-beta.12] — 2026-11-16
 
 ### Alterado

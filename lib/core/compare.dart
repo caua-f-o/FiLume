@@ -1045,7 +1045,7 @@ Job buildCompareReportJob(CompareResult r, String outDir, String name) {
           c.write(txt(40, y, 10.5, l));
           y -= 15;
         }
-        c.write(txt(40, 24, 8, 'Gerado pelo FiLume PDF', '0.45 0.45 0.5'));
+        c.write(txt(40, 24, 8, 'Gerado pelo FiPDF', '0.45 0.45 0.5'));
         page(c.toString());
       }
 

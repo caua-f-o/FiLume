@@ -475,8 +475,8 @@ class _ConvShellState extends State<ConvShell> {
                           _RailButton(
                             icon: Icons.picture_as_pdf_outlined,
                             label: 'PDF',
-                            tooltip: 'Abrir o FiLume PDF',
-                            onTap: () => _open(() => launchPdfApp(const []), 'FiLume PDF'),
+                            tooltip: 'Abrir o FiPDF',
+                            onTap: () => _open(() => launchPdfApp(const []), 'FiPDF'),
                           ),
                           _RailButton(icon: Icons.tune, label: 'Ajustes', selected: _settings, onTap: () => setState(() => _settings = true)),
                           const SizedBox(height: 12),

@@ -48,11 +48,11 @@ class Prefs extends ChangeNotifier {
   bool keepRecents = true;
   final List<Recent> recents = [];
 
-  /// FiLume PDF: pastas favoritas para salvar e a última usada.
+  /// FiPDF: pastas favoritas para salvar e a última usada.
   final List<String> pdfFolders = [];
   String? pdfLastDir;
 
-  /// FiLume PDF: OCR ligado (texto pesquisável ao salvar).
+  /// FiPDF: OCR ligado (texto pesquisável ao salvar).
   bool ocr = true;
 
   /// Opções de digitalização e scanners já encontrados (ver ScanSettings).

@@ -57,9 +57,9 @@ Quer testar novidades antes? As **betas** ficam nas [releases](https://github.co
 | **Dividir** | Por tamanho, duração ou número de partes, sem recodificar. |
 | **Unir** | Junta na ordem da lista. |
 
-### 📄 FiLume PDF
+### 📄 FiPDF
 
-Aplicativo dedicado (`FiLume PDF.exe`, na mesma pasta do FiLume). Tudo gira em torno da **bandeja de páginas**, no estilo do NAPS2: solte PDFs e imagens ou digitalize (scanner USB pelo Windows/WIA, ou de rede por AirScan/eSCL), arraste para reordenar, gire, inverta, endireite e veja de perto. Cada ferramenta trabalha sobre o que está na bandeja:
+Aplicativo dedicado (`FiPDF.exe`, na mesma pasta do FiLume; antes se chamava FiLume PDF). Tudo gira em torno da **bandeja de páginas**, no estilo do NAPS2: solte PDFs e imagens ou digitalize (scanner USB pelo Windows/WIA, ou de rede por AirScan/eSCL), arraste para reordenar, gire, inverta, endireite e veja de perto. Cada ferramenta trabalha sobre o que está na bandeja:
 
 | Ferramenta | O que faz |
 | --- | --- |
@@ -69,6 +69,13 @@ Aplicativo dedicado (`FiLume PDF.exe`, na mesma pasta do FiLume). Tudo gira em t
 | **Imagens** | Exporta cada página como JPG ou PNG em 72, 150 ou 300 dpi. |
 | **Senha** | Protege com AES-256 ou remove a senha (sabendo a atual). |
 | **Editar** | Editor no estilo de um editor de texto: muda o texto dos parágrafos (com a quebra de linha refeita), move e apaga o que já está na página e insere texto, imagens, formas, marcações e assinatura. |
+| **Comentar** | Marca-texto, sublinhado, riscado, notas e retângulos, com autor e data. Lista os comentários que o PDF já tem, apaga os que não servem e exporta a lista em texto. |
+| **Tarjar** | Esconde informações para valer: o texto, as imagens, os links e os comentários sob a tarja são apagados do arquivo, não só cobertos. Marque áreas com o mouse ou procure um texto (nome, CPF) para tarjar todas as ocorrências. O resultado é conferido antes de ser entregue. |
+| **Formulário** | Preenche os campos de um PDF (texto, caixas de marcar, opções, listas) e, se quiser, "achata": os valores viram parte da página. |
+| **Assinar** | Confere as assinaturas digitais de um PDF e assina com o seu certificado (.pfx ou o instalado no Windows, inclusive de cartão e token), com carimbo visível opcional. |
+| **Limpar** | Tira autor, programa de origem, scripts, anexos e dados ocultos (e, se quiser, comentários e marcadores) antes de enviar o arquivo. |
+| **Medir** | Distâncias e áreas sobre a página, em mm, cm, m, polegadas ou pontos, com escala (1:100) para plantas e mapas. |
+| **Verificar** | Confere se o PDF está pronto para leitores de tela (tags, idioma, título, texto de verdade, descrição das imagens) e para arquivamento (os pontos principais do PDF/A), e diz como resolver o que faltar. |
 | **Comparar** | Compara duas versões de um PDF (ou duas digitalizações): acha páginas inseridas e removidas, marca o que mudou em cada página, lista as palavras alteradas e gera um relatório em PDF. |
 
 Ao salvar, uma caixa pede o nome e a pasta, com atalhos para as pastas guardadas nos Ajustes. PDFs com **assinatura digital** são identificados: o app avisa antes de qualquer alteração que a invalide e pode anexar o original assinado ao novo arquivo. Com o **OCR** ligado, digitalizações e fotos saem com texto pesquisável (reconhecimento do próprio Windows 10/11).

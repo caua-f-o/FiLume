@@ -289,7 +289,7 @@ class JobQueue extends ChangeNotifier {
 class AppState extends ChangeNotifier {
   AppState({this.pdfOnly = false});
 
-  /// Verdadeiro no FiLume PDF: só as ferramentas de PDF são carregadas.
+  /// Verdadeiro no FiPDF: só as ferramentas de PDF são carregadas.
   final bool pdfOnly;
   FfTools? tools;
   bool toolsLoading = true;
@@ -341,7 +341,7 @@ class AppState extends ChangeNotifier {
   final AudioMergeSettings audioMerge = AudioMergeSettings();
   final MixSettings mix = MixSettings();
 
-  /// PDFs soltos no app principal, à espera de irem para o FiLume PDF.
+  /// PDFs soltos no app principal, à espera de irem para o FiPDF.
   final List<String> pendingPdfs = [];
 
   /// Ferramenta aberta em cada módulo (lembrada ao trocar de módulo).

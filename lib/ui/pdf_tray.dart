@@ -141,7 +141,7 @@ class OrganizerWorkspace extends StatelessWidget {
   const OrganizerWorkspace({super.key, required this.state, this.showScan = true});
   final AppState state;
 
-  /// No FiLume PDF o botão de digitalizar fica na faixa de ferramentas.
+  /// No FiPDF o botão de digitalizar fica na faixa de ferramentas.
   final bool showScan;
 
   /// Abre a digitalização e põe as páginas na bandeja.

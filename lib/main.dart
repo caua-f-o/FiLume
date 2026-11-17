@@ -30,7 +30,7 @@ Future<void> main(List<String> args) async {
     return;
   }
   if (isPdfApp(args)) {
-    // FiLume PDF: não carrega o player nem nada de vídeo, áudio ou imagem.
+    // FiPDF: não carrega o player nem nada de vídeo, áudio ou imagem.
     final state = AppState(pdfOnly: true);
     await state.prefs.load();
     runApp(PdfApp(state: state, files: fileArgs(args)));

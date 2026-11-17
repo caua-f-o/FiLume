@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-/// O FiLume e o FiLume PDF são o mesmo programa com dois nomes: o executável
-/// "FiLume PDF" (ou a opção --pdf) abre o app de PDF.
+/// O FiLume e o FiPDF são o mesmo programa com dois nomes: o executável
+/// "FiPDF" (ou o antigo "FiLume PDF", ou a opção --pdf) abre o app de PDF.
 bool isPdfApp(List<String> args) =>
     args.contains('--pdf') || p.basenameWithoutExtension(Platform.resolvedExecutable).toLowerCase().contains('pdf');
 
@@ -28,11 +28,15 @@ Future<bool> _start(String exe, List<String> args) async {
   }
 }
 
-/// Abre o FiLume PDF já com [files] na bandeja.
+/// Abre o FiPDF já com [files] na bandeja.
 Future<bool> launchPdfApp(List<String> files) {
-  final exe = p.join(_exeDir, Platform.isWindows ? 'FiLume PDF.exe' : 'filume_pdf');
+  // "FiLume PDF.exe" é o nome antigo, mantido no pacote para atalhos que já existem.
+  for (final name in Platform.isWindows ? const ['FiPDF.exe', 'FiLume PDF.exe'] : const ['fipdf', 'filume_pdf']) {
+    final exe = p.join(_exeDir, name);
+    if (File(exe).existsSync()) return _start(exe, files);
+  }
   // Sem o executável dedicado, o próprio programa abre em modo PDF.
-  return File(exe).existsSync() ? _start(exe, files) : _start(Platform.resolvedExecutable, ['--pdf', ...files]);
+  return _start(Platform.resolvedExecutable, ['--pdf', ...files]);
 }
 
 /// Abre o FiLume Conversor já com [files] na lista.

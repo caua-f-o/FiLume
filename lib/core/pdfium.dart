@@ -8,6 +8,9 @@ import 'package:path/path.dart' as p;
 import 'editor.dart';
 import 'ffmpeg.dart' show FfError;
 
+part 'pdfium_annot.dart';
+part 'pdfium_redact.dart';
+
 /// Ponte com o PDFium (o motor de PDF do Chrome), que roda dentro do próprio
 /// app: nada sai do computador. É ele que abre o arquivo, desenha as páginas e
 /// grava as alterações do editor.
@@ -53,7 +56,8 @@ int _writeBlock(Pointer<_FileWrite> self, Pointer<Void> data, int size) {
 
 class Pdfium {
   Pdfium._(DynamicLibrary lib)
-      : initLibrary = lib.lookupFunction<Void Function(), void Function()>('FPDF_InitLibrary'),
+      : _lib = lib,
+        initLibrary = lib.lookupFunction<Void Function(), void Function()>('FPDF_InitLibrary'),
         getLastError = lib.lookupFunction<UnsignedLong Function(), int Function()>('FPDF_GetLastError'),
         loadMemDocument =
             lib.lookupFunction<_H Function(Pointer<Void>, Size, Pointer<Uint8>), _H Function(Pointer<Void>, int, Pointer<Uint8>)>('FPDF_LoadMemDocument64'),
@@ -132,6 +136,10 @@ class Pdfium {
     _free = crt.lookupFunction<Void Function(Pointer<Void>), void Function(Pointer<Void>)>('free');
     initLibrary();
   }
+
+  final DynamicLibrary _lib;
+  late final _RedactApi _redact = _RedactApi(_lib);
+  late final _AnnotApi _annot = _AnnotApi(_lib);
 
   final void Function() initLibrary;
   final int Function() getLastError;

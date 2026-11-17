@@ -224,14 +224,17 @@ endif()
   }
 }
 
-/// FiLume PDF: o mesmo executável com outro nome (o app decide o que abrir
-/// pelo nome do arquivo). Uma cópia vai para a pasta do build.
+/// FiPDF: o mesmo executável com outro nome (o app decide o que abrir pelo
+/// nome do arquivo). "FiLume PDF.exe" é o nome antigo: continua no pacote para
+/// os atalhos que as pessoas já criaram e para a atualização reabrir o app.
 void bundlePdfApp() {
   final cmake = File('windows/CMakeLists.txt');
-  if (cmake.existsSync() && !cmake.readAsStringSync().contains('FiLume PDF.exe')) {
+  if (cmake.existsSync() && !cmake.readAsStringSync().contains('FiPDF.exe')) {
     cmake.writeAsStringSync('''
 
-# FiLume PDF: cópia do executável com o nome do app de PDF.
+# FiPDF: cópia do executável com o nome do app de PDF (e o nome antigo).
+install(PROGRAMS "\$<TARGET_FILE:\${BINARY_NAME}>"
+  DESTINATION "\${CMAKE_INSTALL_PREFIX}" RENAME "FiPDF.exe" COMPONENT Runtime)
 install(PROGRAMS "\$<TARGET_FILE:\${BINARY_NAME}>"
   DESTINATION "\${CMAKE_INSTALL_PREFIX}" RENAME "FiLume PDF.exe" COMPONENT Runtime)
 ''', mode: FileMode.append);

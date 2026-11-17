@@ -28,10 +28,17 @@ import '../ui/modules_ui.dart';
 import '../ui/update_ui.dart';
 import 'compare_view.dart';
 import 'editor_view.dart';
+import 'check_view.dart';
+import 'clean_view.dart';
+import 'sign_view.dart';
+import 'forms_view.dart';
+import 'measure_view.dart';
+import 'notes_view.dart';
+import 'redact_view.dart';
 import 'save_dialog.dart';
 
-/// FiLume PDF: o app dedicado de PDF. Mesmo programa do FiLume, aberto pelo
-/// executável "FiLume PDF"; a bandeja de páginas é o centro de tudo.
+/// FiPDF: o app dedicado de PDF. Mesmo programa do FiLume, aberto pelo
+/// executável "FiPDF"; a bandeja de páginas é o centro de tudo.
 class PdfApp extends StatefulWidget {
   const PdfApp({super.key, required this.state, this.files = const []});
   final AppState state;
@@ -52,7 +59,7 @@ class _PdfAppState extends State<PdfApp> {
     super.initState();
     state.init();
     state.docs.addPaths(widget.files);
-    windowManager.setTitle('FiLume PDF').catchError((_) {});
+    windowManager.setTitle('FiPDF').catchError((_) {});
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
         state.queue.cancelAll();
@@ -79,7 +86,7 @@ class _PdfAppState extends State<PdfApp> {
       builder: (context, _) {
         final seed = seedFor(state.prefs, 'pdf');
         return MaterialApp(
-          title: 'FiLume PDF',
+          title: 'FiPDF',
           debugShowCheckedModeBanner: false,
           theme: buildTheme(seed, Brightness.light),
           darkTheme: buildTheme(seed, Brightness.dark),
@@ -120,6 +127,13 @@ const _compareTool = 5;
 
 /// Índice do editor na barra lateral (tem área e faixa de ferramentas próprias).
 const _editTool = 6;
+const _redactTool = 7;
+const _formsTool = 8;
+const _notesTool = 9;
+const _measureTool = 10;
+const _checkTool = 11;
+const _signTool = 12;
+const _cleanTool = 13;
 
 class PdfShell extends StatefulWidget {
   const PdfShell({super.key, required this.state});
@@ -134,6 +148,13 @@ class _PdfShellState extends State<PdfShell> {
   int _tool = 0;
   late final CompareSession _compare = CompareSession(widget.state);
   late final EditorSession _editor = EditorSession(widget.state);
+  late final RedactSession _redact = RedactSession(widget.state);
+  late final FormsSession _forms = FormsSession(widget.state);
+  late final NotesSession _notes = NotesSession(widget.state);
+  late final MeasureSession _measure = MeasureSession(widget.state);
+  late final CheckSession _check = CheckSession(widget.state);
+  late final SignSession _sign = SignSession(widget.state);
+  late final CleanSession _clean = CleanSession();
   bool _dragging = false;
 
   AppState get state => widget.state;
@@ -150,6 +171,13 @@ class _PdfShellState extends State<PdfShell> {
   void dispose() {
     _compare.dispose();
     _editor.dispose();
+    _redact.dispose();
+    _forms.dispose();
+    _notes.dispose();
+    _measure.dispose();
+    _check.dispose();
+    _sign.dispose();
+    _clean.dispose();
     super.dispose();
   }
 
@@ -337,6 +365,20 @@ class _PdfShellState extends State<PdfShell> {
                           ? CompareView(state: state, session: _compare)
                           : _tool == _editTool
                               ? EditorView(state: state, session: _editor)
+                          : _tool == _redactTool
+                              ? RedactView(state: state, session: _redact)
+                          : _tool == _formsTool
+                              ? FormsView(state: state, session: _forms)
+                          : _tool == _notesTool
+                              ? NotesView(state: state, session: _notes)
+                          : _tool == _measureTool
+                              ? MeasureView(state: state, session: _measure)
+                          : _tool == _checkTool
+                              ? CheckView(state: state, session: _check)
+                          : _tool == _signTool
+                              ? SignView(state: state, session: _sign)
+                          : _tool == _cleanTool
+                              ? CleanView(state: state, session: _clean)
                           : _tool < 0
                           ? SettingsPage(prefs: state.prefs, mainApp: false, extra: _FoldersSection(prefs: state.prefs), updates: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [ModulesSection(state: state), const SizedBox(height: 16), UpdateSection(state: state)]))
                           : ListenableBuilder(listenable: state, builder: (context, _) => _workArea(context)),
@@ -347,7 +389,7 @@ class _PdfShellState extends State<PdfShell> {
             ),
           ),
           if (customTitleBar)
-            const Positioned(top: 0, left: 0, right: 0, child: TitleBarOverlay(title: 'FiLume PDF')),
+            const Positioned(top: 0, left: 0, right: 0, child: TitleBarOverlay(title: 'FiPDF')),
         ],
       ),
     );
@@ -493,6 +535,48 @@ class _Rail extends StatelessWidget {
                     label: 'Editar',
                     selected: current == _editTool,
                     onTap: () => onGo(_editTool),
+                  ),
+                  _RailItem(
+                    icon: Icons.rate_review_outlined,
+                    label: 'Comentar',
+                    selected: current == _notesTool,
+                    onTap: () => onGo(_notesTool),
+                  ),
+                  _RailItem(
+                    icon: Icons.format_color_fill,
+                    label: 'Tarjar',
+                    selected: current == _redactTool,
+                    onTap: () => onGo(_redactTool),
+                  ),
+                  _RailItem(
+                    icon: Icons.fact_check_outlined,
+                    label: 'Formulário',
+                    selected: current == _formsTool,
+                    onTap: () => onGo(_formsTool),
+                  ),
+                  _RailItem(
+                    icon: Icons.straighten,
+                    label: 'Medir',
+                    selected: current == _measureTool,
+                    onTap: () => onGo(_measureTool),
+                  ),
+                  _RailItem(
+                    icon: Icons.draw_outlined,
+                    label: 'Assinar',
+                    selected: current == _signTool,
+                    onTap: () => onGo(_signTool),
+                  ),
+                  _RailItem(
+                    icon: Icons.cleaning_services_outlined,
+                    label: 'Limpar',
+                    selected: current == _cleanTool,
+                    onTap: () => onGo(_cleanTool),
+                  ),
+                  _RailItem(
+                    icon: Icons.verified_outlined,
+                    label: 'Verificar',
+                    selected: current == _checkTool,
+                    onTap: () => onGo(_checkTool),
                   ),
                   _RailItem(
                     icon: Icons.difference_outlined,
@@ -869,7 +953,7 @@ class _Signed extends StatelessWidget {
                       const SizedBox(height: 12),
                     ],
                     Text(
-                      'O FiLume PDF identifica as assinaturas, mas não confere se são válidas. '
+                      'O FiPDF identifica as assinaturas, mas não confere se são válidas. '
                       'Para isso, use um validador (o do gov.br, por exemplo) no arquivo original.',
                       style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
                     ),

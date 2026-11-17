@@ -8,13 +8,13 @@ class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.prefs, this.extra, this.updates, this.mainApp = true});
   final Prefs prefs;
 
-  /// Seção a mais, mostrada antes das outras (pastas do FiLume PDF).
+  /// Seção a mais, mostrada antes das outras (pastas do FiPDF).
   final Widget? extra;
 
   /// Cartão de atualizações (fica no fim da página).
   final Widget? updates;
 
-  /// Falso no FiLume PDF: esconde o que só vale para o app principal.
+  /// Falso no FiPDF: esconde o que só vale para o app principal.
   final bool mainApp;
 
   @override

@@ -14,7 +14,7 @@ import 'theme.dart';
 
 /// Envia cada arquivo para a lista do módulo certo e devolve o módulo do
 /// primeiro arquivo reconhecido (para onde a tela deve ir). PDFs não entram
-/// em lista nenhuma: ficam em [AppState.pendingPdfs] para o FiLume PDF.
+/// em lista nenhuma: ficam em [AppState.pendingPdfs] para o FiPDF.
 String? routeFiles(AppState state, List<String> paths) {
   String? target;
   for (final path in paths) {
@@ -48,7 +48,7 @@ class _Category {
 }
 
 const _categories = [
-  _Category('pdf', 'FiLume PDF', 'App dedicado: bandeja de páginas · Comprimir · Dividir · Senha',
+  _Category('pdf', 'FiPDF', 'App dedicado: bandeja de páginas · Comprimir · Dividir · Senha',
       Icons.picture_as_pdf_outlined, 'pages'),
   _Category('video', 'Vídeo', 'Comprimir · Dividir · Cortar · Converter', Icons.videocam_outlined, 'video'),
   _Category('audio', 'Áudio', 'Converter · Comprimir · Mixar · Unir', Icons.music_note_outlined, 'audio'),
@@ -77,7 +77,7 @@ class HomePage extends StatelessWidget {
   void _route(List<String> paths) {
     final target = routeFiles(state, paths);
     if (target != null) onNavigate(target);
-    // PDFs misturados com outros arquivos: oferece o FiLume PDF também.
+    // PDFs misturados com outros arquivos: oferece o FiPDF também.
     if (target != 'pdf' && state.pendingPdfs.isNotEmpty) onNavigate('pdf');
   }
 

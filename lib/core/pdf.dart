@@ -8,6 +8,7 @@ import 'editor.dart';
 import 'ffmpeg.dart';
 import 'format.dart';
 import 'job.dart';
+import 'pdf_outline.dart';
 import 'ocr.dart';
 import 'signature.dart';
 
@@ -402,7 +403,24 @@ Job buildPdfCompressJob(MediaInfo info, PdfCompressSettings settings, String? ou
           await _qpdf(ctx, tools, ['--object-streams=generate', '--recompress-flate', '--compression-level=9', best, packed]);
           if (File(packed).lengthSync() < File(best).lengthSync()) best = packed;
         } catch (_) {}
-        final after = File(best).lengthSync();
+        var after = File(best).lengthSync();
+        if (after >= info.sizeBytes) {
+          // As imagens já estavam leves: tenta só reorganizar o arquivo, sem mexer nelas.
+          ctx.report(0.97, stage: 'Tentando sem perda');
+          final lossless = p.join(work.path, 'sem_perda.pdf');
+          try {
+            await _qpdf(ctx, tools, [
+              '--object-streams=generate', '--recompress-flate', '--compression-level=9', '--remove-unreferenced-resources=yes',
+              info.path, lossless,
+            ]);
+            final n = File(lossless).lengthSync();
+            if (n < info.sizeBytes * 0.99) {
+              best = lossless;
+              after = n;
+              warning = 'As imagens já estavam leves; só a estrutura do arquivo foi reorganizada, sem perda de qualidade';
+            }
+          } catch (_) {}
+        }
         if (after >= info.sizeBytes) {
           throw FfError('Este PDF já está bem comprimido: o resultado ficaria maior '
               '(${fmtBytes(after)} contra ${fmtBytes(info.sizeBytes)}). '
@@ -660,6 +678,10 @@ Future<void> _assemble(JobCtx ctx, PdfTools tools, List<(String, int, int)> part
   }
   args.add(out);
   await _qpdf(ctx, tools, args);
+  // O documento montado nasce sem marcadores: refaz os das origens.
+  try {
+    await carryOutlines(tools.qpdf, [for (final pt in parts) (pt.$1, pt.$2)], out);
+  } catch (_) {}
 }
 
 String _orderedRanges(List<int> pages) => compactRanges(pages);
@@ -678,11 +700,10 @@ Job buildPdfMergeJob(List<MediaInfo> items, String? outDir, PdfTools tools) {
       final out = await _outFile(outDir, first, '_unido');
       ctx.report(0, stage: 'Unindo');
       try {
-        await _qpdf(ctx, tools, [
-          '--empty', '--pages',
-          for (final d in docs) ...[d.path, '1-z'],
-          '--', out,
-        ]);
+        await _assemble(ctx, tools, [
+          for (final d in docs)
+            for (var pg = 1; pg <= d.pages; pg++) (d.path, pg, 0),
+        ], out);
       } catch (_) {
         _delete(out);
         rethrow;
@@ -739,7 +760,7 @@ Job buildPdfOrganizeJob(List<PageRef> pages, String? outDir, PdfTools tools, [Pa
   );
 }
 
-// ------------------------------------------------- bandeja (FiLume PDF)
+// ------------------------------------------------- bandeja (FiPDF)
 
 /// Resolução em que as páginas são desenhadas para o OCR ler.
 const _ocrDpi = 200;
@@ -884,7 +905,7 @@ String uniqueName(Set<String> used, String name) {
   return n;
 }
 
-/// Trabalho do FiLume PDF: monta as páginas da bandeja e aplica [op].
+/// Trabalho do FiPDF: monta as páginas da bandeja e aplica [op].
 /// O resultado vai para [outDir] com o nome [name] (sem extensão).
 Job buildTrayJob({
   required List<PageRef> pages,
