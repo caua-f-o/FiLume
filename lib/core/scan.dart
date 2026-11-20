@@ -758,7 +758,11 @@ class EsclScanner {
         try {
           final req = await client.postUrl(Uri.parse('$base/ScanJobs'));
           req.headers.contentType = ContentType('text', 'xml', charset: 'utf-8');
-          req.write(xml);
+          // Com o tamanho declarado: sem ele o Dart manda o corpo "em pedaços" (chunked), que
+          // alguns servidores (o do auxiliar, e scanners mais simples) não leem.
+          final body = utf8.encode(xml);
+          req.contentLength = body.length;
+          req.add(body);
           created = await req.close().timeout(const Duration(seconds: 30));
         } catch (e) {
           if (cancel.canceled) return;
