@@ -5,22 +5,45 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
-/// Digitalização feita pelo próprio FiLume, sem programas de terceiros:
-///  - "wia": scanners com driver do Windows (USB, em geral), pela camada de
-///    automação WIA que já vem no sistema;
-///  - "escl": scanners e multifuncionais de rede (AirScan/eSCL), por HTTP.
+import 'scan_bridge.dart';
+
+/// Digitalização do FiPDF:
+///  - "escl": scanners e multifuncionais de rede (AirScan/eSCL), por HTTP;
+///  - "wia" e "twain": scanners deste computador (USB, em geral), pelo FiPDF.Scan, o auxiliar
+///    em C# que serve cada aparelho por eSCL em 127.0.0.1. O FiPDF usa o mesmo cliente eSCL
+///    para os dois casos.
+/// Sem o auxiliar (pacote antigo, ou fora do Windows), os scanners WIA ainda funcionam pelo
+/// caminho antigo, um script do PowerShell.
 class ScanDevice {
   const ScanDevice(this.driver, this.id, this.name);
+
+  /// "escl" (rede), "wia" ou "twain" (deste computador) ou "demo" (testes).
   final String driver;
 
-  /// WIA: identificador do aparelho. eSCL: endereço base (http://ip:porta/eSCL).
+  /// Rede: endereço base (http://ip:porta/eSCL). Deste computador: identificador do auxiliar
+  /// ("wia:…", "twain:…"); no caminho antigo, o identificador do WIA.
   final String id;
   final String name;
+
+  bool get isNetwork => driver == 'escl';
+
+  /// Aparelho servido pelo auxiliar (o identificador traz o driver na frente).
+  bool get viaBridge => !isNetwork && id.startsWith('$driver:');
+
+  /// Etiqueta para a lista: "Rede", "Local · WIA" ou "Local · TWAIN".
+  String get tag => switch (driver) {
+        'escl' => 'Rede',
+        'demo' => 'Demonstração',
+        _ => 'Local · ${driver.toUpperCase()}',
+      };
+
+  /// Chave única na lista (o mesmo aparelho pode existir pela rede e pelo USB).
+  String get key => '$driver|$id';
 }
 
 class ScanSettings {
-  /// "wia" ou "escl".
-  String driver = 'wia';
+  /// Driver do aparelho escolhido: "escl", "wia", "twain" (ou "demo").
+  String driver = 'escl';
   String device = '';
 
   /// "auto" (o scanner decide: alimentador se tiver papel, senão vidro),
@@ -66,7 +89,7 @@ class ScanSettings {
       return v is String && ok.contains(v) ? v : current;
     }
 
-    driver = pick('driver', const ['wia', 'escl'], driver);
+    driver = pick('driver', const ['wia', 'twain', 'escl', 'demo'], driver);
     source = pick('source', const ['auto', 'glass', 'feeder'], source);
     color = pick('color', const ['color', 'gray', 'bw'], color);
     if (j['device'] is String) device = j['device'] as String;
@@ -104,9 +127,36 @@ class ScanCancel {
 }
 
 class Scanner {
-  /// Procura scanners: os instalados no Windows ("wia") ou os da rede ("escl").
-  Future<List<ScanDevice>> devices(String driver) =>
-      driver == 'escl' ? EsclScanner.discover() : WiaScanner.devices();
+  Scanner({ScanBridge? bridge}) : bridge = bridge ?? ScanBridge();
+
+  /// Ponte com o auxiliar dos scanners deste computador.
+  final ScanBridge bridge;
+
+  /// O auxiliar está disponível (está no pacote, ou já está rodando)?
+  bool get hasBridge => bridge.running || ScanBridge.locate() != null;
+
+  /// Scanners da rede (AirScan/eSCL), procurados por alguns segundos.
+  Future<List<ScanDevice>> network() => EsclScanner.discover();
+
+  /// Scanners deste computador. Pelo auxiliar, quando ele existe; senão, pelo WIA antigo.
+  /// Com [refresh], o auxiliar procura de novo (senão vale a lista que ele já tem).
+  Future<List<ScanDevice>> local({bool refresh = false}) async {
+    if (hasBridge && bridge.unavailable == null) {
+      try {
+        await bridge.ensure();
+        final list = refresh ? await bridge.refresh() : bridge.devices;
+        return [
+          for (final d in list)
+            if (d.driver != 'demo' || bridge.demo) ScanDevice(d.driver, d.id, d.name),
+        ];
+      } on BridgeError catch (e) {
+        if (!Platform.isWindows) throw ScanError(e.message, e.details);
+        // O auxiliar não subiu: ainda dá para usar o WIA pelo caminho antigo.
+      }
+    }
+    if (!Platform.isWindows) return const [];
+    return WiaScanner.devices();
+  }
 
   /// Scanner de rede informado à mão (IP ou nome), quando a busca não acha.
   Future<ScanDevice> esclAt(String host) => EsclScanner.probe(host);
@@ -122,8 +172,11 @@ class Scanner {
     }
 
     try {
-      if (s.driver == 'escl') {
+      final device = ScanDevice(s.driver, s.device, s.device);
+      if (device.isNetwork) {
         await EsclScanner.scan(s, dir.path, page, cancel ?? ScanCancel());
+      } else if (device.viaBridge) {
+        await EsclScanner.scan(s, dir.path, page, cancel ?? ScanCancel(), base: await _localUrl(device.id));
       } else {
         await WiaScanner.scan(s, dir.path, page, cancel ?? ScanCancel());
       }
@@ -141,6 +194,23 @@ class Scanner {
       throw ScanError('O scanner não devolveu nenhuma página. Confira se há papel e se ele está ligado.');
     }
     return pages;
+  }
+
+  /// Endereço do servidor local do aparelho [id]. Se ele sumiu da lista (desconectado, ou o
+  /// auxiliar foi reiniciado), procura de novo uma vez.
+  Future<String> _localUrl(String id) async {
+    try {
+      await bridge.ensure();
+      var url = bridge.urlFor(id);
+      if (url == null) {
+        await bridge.refresh();
+        url = bridge.urlFor(id);
+      }
+      if (url != null) return url;
+    } on BridgeError catch (e) {
+      throw ScanError('O auxiliar de digitalização não está funcionando.', e.toString());
+    }
+    throw ScanError('Este scanner não foi encontrado agora. Confira se ele está ligado e conectado, e procure de novo.');
   }
 }
 
@@ -545,7 +615,8 @@ class EsclScanner {
 
   /// Pedido de digitalização. Com [caps] (o XML de capacidades do scanner),
   /// resolução, cor, formato e área são ajustados ao que ele aceita.
-  static String settingsXml(ScanSettings s, {required bool feeder, String caps = '', bool regions = true, bool bare = false}) {
+  static String settingsXml(ScanSettings s,
+      {required bool feeder, bool auto = false, String caps = '', bool regions = true, bool bare = false}) {
     final duplex = feeder && s.duplex;
     final part = (feeder
             ? (duplex ? _section(caps, 'AdfDuplexInputCaps') : null) ?? _section(caps, 'AdfSimplexInputCaps')
@@ -578,7 +649,7 @@ class EsclScanner {
             '<pwg:Height>$maxH</pwg:Height><pwg:Width>$maxW</pwg:Width>'
             '<pwg:XOffset>0</pwg:XOffset><pwg:YOffset>0</pwg:YOffset>'
             '</pwg:ScanRegion></pwg:ScanRegions>' : ''}'
-        '<pwg:InputSource>${feeder ? 'Feeder' : 'Platen'}</pwg:InputSource>'
+        '<pwg:InputSource>${auto ? 'Auto' : (feeder ? 'Feeder' : 'Platen')}</pwg:InputSource>'
         '<scan:ColorMode>$mode</scan:ColorMode>'
         '<pwg:DocumentFormat>$format</pwg:DocumentFormat>'
         '${!bare && (caps.isEmpty || caps.contains('DocumentFormatExt')) ? '<scan:DocumentFormatExt>$format</scan:DocumentFormatExt>' : ''}'
@@ -620,8 +691,8 @@ class EsclScanner {
     c.close(force: true);
   }
 
-  static Future<void> scan(ScanSettings s, String dir, void Function(String) onPage, ScanCancel cancel) async {
-    final base = s.device;
+  static Future<void> scan(ScanSettings s, String dir, void Function(String) onPage, ScanCancel cancel, {String? base}) async {
+    base ??= s.device;
     final client = _client();
     Uri? job;
     var feeder = false;
@@ -634,6 +705,9 @@ class EsclScanner {
       final caps = await _get(client, '$base/ScannerCapabilities');
       var adfState = _values(await _get(client, '$base/ScannerStatus'), 'AdfState').firstOrNull ?? '';
       final hasAdf = caps.isEmpty || _section(caps, 'Adf') != null;
+      final hasPlaten = caps.isEmpty || _section(caps, 'Platen') != null;
+      // Servidor do auxiliar do FiPDF: aceita a origem "Auto" (o driver escolhe na hora).
+      final autoExt = caps.contains('FiPDFAutoSource');
       log.add('Scanner: ${_values(caps, 'MakeAndModel').firstOrNull ?? '?'} · eSCL ${_values(caps, 'Version').firstOrNull ?? '?'} · '
           'alimentador: ${caps.isEmpty ? 'capacidades não lidas' : (hasAdf ? 'sim' : 'não')} · '
           'frente e verso: ${_section(caps, 'AdfDuplexInputCaps') != null ? 'sim' : 'não'} · AdfState: ${adfState.isEmpty ? '(não informa)' : adfState}');
@@ -641,9 +715,16 @@ class EsclScanner {
       if (s.source == 'feeder' && !hasAdf) {
         throw ScanError('Este scanner não tem alimentador de folhas. Use "Vidro" ou "Automático".', details());
       }
+      if (s.source == 'glass' && !hasPlaten) {
+        throw ScanError('Este scanner não tem vidro, só alimentador. Use "Alimentador" ou "Automático".', details());
+      }
       // O estado do alimentador só decide no automático: há scanners que
       // informam "vazio" com papel, então no modo Alimentador a tentativa é feita de qualquer jeito.
-      feeder = s.source == 'feeder' || (s.source == 'auto' && hasAdf && adfState == 'ScannerAdfLoaded');
+      // Sem vidro, o automático só pode ser o alimentador; frente e verso também só existe nele.
+      feeder = s.source == 'feeder' ||
+          (s.source == 'auto' && hasAdf && (adfState == 'ScannerAdfLoaded' || !hasPlaten || (autoExt && s.duplex)));
+      // Automático de verdade (o driver decide), quando o aparelho tem vidro e alimentador.
+      final autoSource = s.source == 'auto' && !feeder && autoExt && hasAdf && hasPlaten;
       if (feeder && s.duplex && caps.isNotEmpty && _section(caps, 'AdfDuplexInputCaps') == null) {
         throw ScanError('Este scanner não faz frente e verso sozinho. Desmarque "Frente e verso".', details());
       }
@@ -655,7 +736,8 @@ class EsclScanner {
         }
         log.add('Depois de esperar 12 s pelo sensor do alimentador: AdfState: $adfState');
       }
-      log.add('Opções: ${s.dpi} dpi · ${s.color} · frente e verso: ${feeder && s.duplex ? 'sim' : 'não'}');
+      log.add('Opções: ${s.dpi} dpi · ${s.color} · origem: ${autoSource ? 'automática (o driver escolhe)' : (feeder ? 'alimentador' : 'vidro')} · '
+          'frente e verso: ${feeder && s.duplex ? 'sim' : 'não'}');
       // Formas do pedido, da mais completa à mais simples: cada aparelho tem suas manias.
       final variants = <(String, bool, bool)>[
         ('completo', true, false),
@@ -666,8 +748,8 @@ class EsclScanner {
       var refused = 0, tried = 0;
       for (var v = 0; v < variants.length && n == 0 && !cancel.canceled; v++) {
         final (label, regions, bare) = variants[v];
-        final xml = settingsXml(s, feeder: feeder, caps: caps, regions: regions, bare: bare);
-        if (v > 0 && xml == settingsXml(s, feeder: feeder, caps: caps, regions: variants[v - 1].$2, bare: variants[v - 1].$3)) {
+        final xml = settingsXml(s, feeder: feeder, auto: autoSource, caps: caps, regions: regions, bare: bare);
+        if (v > 0 && xml == settingsXml(s, feeder: feeder, auto: autoSource, caps: caps, regions: variants[v - 1].$2, bare: variants[v - 1].$3)) {
           continue; // igual ao pedido anterior: não adianta repetir
         }
         tried++;
@@ -685,7 +767,7 @@ class EsclScanner {
         }
         final reply = await created.transform(const Utf8Decoder(allowMalformed: true)).join();
         final loc = created.headers.value(HttpHeaders.locationHeader);
-        log.add('Pedido $label (${feeder ? 'Feeder' : 'Platen'}): HTTP ${created.statusCode}'
+        log.add('Pedido $label (${autoSource ? 'Auto' : (feeder ? 'Feeder' : 'Platen')}): HTTP ${created.statusCode}'
             '${reply.trim().isEmpty ? '' : ' ${reply.trim().replaceAll(RegExp(r'\s+'), ' ')}'}');
         if (created.statusCode == 409 || created.statusCode == 400) {
           refused++;
@@ -720,10 +802,21 @@ class EsclScanner {
             final path = p.join(dir, 'pagina_${n.toString().padLeft(4, '0')}.$ext');
             await res.pipe(File(path).openWrite());
             onPage(path);
-            if (!feeder) break;
+            if (!feeder && !autoSource) break;
             continue;
           }
           await res.drain<void>();
+          // O auxiliar do FiPDF explica o erro (em português) em ErrorDetails.
+          if (code == 500 && caps.contains('ErrorDetails')) {
+            final details0 = await _get(client, '${current.toString().replaceAll(RegExp(r'/+$'), '')}/ErrorDetails');
+            final message = _values(details0, 'Mensagem').firstOrNull;
+            final tech = _values(details0, 'Tecnico').firstOrNull;
+            if (message != null) {
+              log.add('Erro informado pelo aparelho: ${tech ?? message}');
+              if (n > 0) break; // páginas que já chegaram ficam
+              throw ScanError(message, details());
+            }
+          }
           if (code == 503 && busy < 90) {
             // Ainda lendo a folha: espera e pergunta de novo.
             busy++;

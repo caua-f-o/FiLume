@@ -23,6 +23,8 @@
 
   <ItemGroup>
     <PackageReference Include="NAPS2.Escl" Version="1.5.0" />
+    <!-- Para o LocalScanJob (digitalização pelo WIA/TWAIN). -->
+    <PackageReference Include="NAPS2.Sdk" Version="1.5.0" />
     <!-- A mesma versão que o NAPS2.Escl.Server usa. -->
     <PackageReference Include="EmbedIO" Version="3.5.2" />
   </ItemGroup>

@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using FiPDF.Escl.Local;
 using Microsoft.Extensions.Logging;
-using NAPS2.Remoting.Server;
+using NAPS2.Escl.Server;
 using NAPS2.Scan;
 
 namespace FiPDF.Scan;
@@ -46,10 +46,10 @@ internal sealed class Bridge(BridgeOptions options)
     private readonly CancellationTokenSource _quit = new();
     private readonly SemaphoreSlim _busy = new(1, 1);
     private ScanningContext? _scanning;
-    private ScanServer? _server;
     private LocalEsclServer? _escl;
     private List<ScanDevice> _devices = new();
     private List<DriverError> _errors = new();
+    private readonly Dictionary<EsclDeviceConfig, ScanDevice> _byConfig = new(ReferenceEqualityComparer.Instance);
 
     public async Task<int> Run()
     {
@@ -94,10 +94,29 @@ internal sealed class Bridge(BridgeOptions options)
             _errors = errors;
             foreach (var e in errors) _log.LogWarning("Driver {Driver}: {Message}", e.Driver, e.Mensagem);
 
-            _escl = new LocalEsclServer { Logger = _log };
-            _server = new ScanServer(_scanning, _escl);
+            var scanning = _scanning;
+            _escl = new LocalEsclServer
+            {
+                Logger = _log,
+                // Cada pedido vira um trabalho do NAPS2 para o aparelho certo, com a origem "Auto" quando pedida.
+                JobFactory = (config, request) =>
+                {
+                    var st = request.Settings;
+                    _log.LogInformation("Pedido para {Device}: origem {Source}{Duplex}, {Dpi} dpi, {Color}, área {W}x{H}, {Format}",
+                        config.Capabilities.MakeAndModel, request.AutoSource ? "Auto" : st.InputSource.ToString(),
+                        st.Duplex ? " (frente e verso)" : "", st.XResolution, st.ColorMode, st.Width, st.Height, st.DocumentFormat);
+                    // O aparelho de demonstração tem o trabalho próprio dele.
+                    if (!_byConfig.TryGetValue(config, out var device)) return config.CreateJob(request.Settings);
+                    var maxWidth = (request.Settings.InputSource == NAPS2.Escl.EsclInputSource.Feeder
+                        ? config.Capabilities.AdfSimplexCaps
+                        : config.Capabilities.PlatenCaps)?.MaxWidth ?? 0;
+                    return new LocalScanJob(scanning, device, request, maxWidth);
+                },
+            };
+            _byConfig.Clear();
             // Nomes únicos: dois aparelhos iguais (um no WIA, outro no TWAIN) não se confundem.
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var controller = new ScanController(scanning);
             for (var i = 0; i < _devices.Count; i++)
             {
                 var d = _devices[i];
@@ -108,11 +127,33 @@ internal sealed class Bridge(BridgeOptions options)
                     var n = 2;
                     while (!used.Add(name)) name = $"{d.Name} ({n++})";
                 }
-                _server.RegisterDevice(d, name, options.BasePort == 0 ? 0 : options.BasePort + i);
+                // O que o aparelho tem (vidro, alimentador, frente e verso…). Driver travado não trava a lista.
+                ScanCaps? caps = null;
+                try
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                    caps = await controller.GetCaps(d, timeout.Token);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning("Sem as capacidades de {Device}: {Message}", d.Name, ex.Message);
+                }
+                var config = new EsclDeviceConfig
+                {
+                    Port = options.BasePort == 0 ? 0 : options.BasePort + i,
+                    Capabilities = Capabilities.For(name, Devices.Key(d), caps),
+                    // Não é usado (o JobFactory cuida), mas o EsclDeviceConfig exige.
+                    CreateJob = _ => throw new InvalidOperationException(),
+                };
+                _byConfig[config] = d;
+                _escl.AddDevice(config);
+                var src = caps?.PaperSourceCaps;
+                _log.LogInformation("{Device} ({Driver}): vidro {Flatbed}, alimentador {Feeder}, frente e verso {Duplex}",
+                    name, Devices.DriverName(d.Driver), src?.SupportsFlatbed, src?.SupportsFeeder, src?.SupportsDuplex);
             }
             // Aparelho de demonstração: registrado direto no servidor local, depois dos reais.
             if (options.Demo) _escl.AddDevice(DemoDevice.Config(options.BasePort == 0 ? 0 : options.BasePort + _devices.Count));
-            await _server.Start();
+            await _escl.Start();
             foreach (var (config, port, error) in _escl.Devices)
             {
                 if (error != null) _log.LogError("Servidor de {Device}: {Error}", config.Capabilities.MakeAndModel, error);
@@ -127,17 +168,16 @@ internal sealed class Bridge(BridgeOptions options)
 
     private async Task StopServer()
     {
-        if (_server == null) return;
+        if (_escl == null) return;
         try
         {
-            await _server.Stop();
+            await _escl.Stop();
         }
         catch (Exception ex)
         {
             _log.LogWarning(ex, "Ao parar os servidores");
         }
-        _server.Dispose();
-        _server = null;
+        _escl.Dispose();
         _escl = null;
     }
 

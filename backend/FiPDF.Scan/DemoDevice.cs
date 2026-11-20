@@ -22,12 +22,38 @@ internal static class DemoDevice
             MakeAndModel = Name,
             Manufacturer = "FiLume",
             Uuid = "8a3c0b9e-6f1d-4a52-9f0e-000000000001",
+            Naps2Extensions = Capabilities.Extensions,
+            // Vidro e alimentador (A4), com frente e verso: exercita as capacidades conhecidas.
+            PlatenCaps = Input(),
+            AdfSimplexCaps = Input(),
+            AdfDuplexCaps = Input(),
         },
-        CreateJob = _ => new Job(),
+        CreateJob = settings => new Job(settings),
     };
 
-    private sealed class Job : IEsclScanJob
+    private static EsclInputCaps Input() => new()
     {
+        MinWidth = 1,
+        MinHeight = 1,
+        MaxWidth = 2480,
+        MaxHeight = 3508,
+        SettingProfiles =
+        [
+            new EsclSettingProfile
+            {
+                ColorModes = [EsclColorMode.Grayscale8, EsclColorMode.RGB24],
+                DiscreteResolutions = [new DiscreteResolution(150, 150), new DiscreteResolution(300, 300)],
+            }
+        ],
+    };
+
+    /// <summary>
+    /// Uma página só. Frente e verso pelo alimentador simula o erro "alimentador vazio", para testar
+    /// a mensagem de erro em português (ErrorDetails).
+    /// </summary>
+    private sealed class Job(EsclScanSettings settings) : IEsclScanJob
+    {
+        private readonly bool _fail = settings.InputSource == EsclInputSource.Feeder && settings.Duplex;
         private Action<StatusTransition>? _callback;
         private bool _sent;
 
@@ -37,8 +63,15 @@ internal static class DemoDevice
 
         public void RegisterStatusTransitionCallback(Action<StatusTransition> callback) => _callback = callback;
 
-        // Uma página só.
-        public Task<bool> WaitForNextDocument(CancellationToken cancelToken) => Task.FromResult(!_sent);
+        public Task<bool> WaitForNextDocument(CancellationToken cancelToken)
+        {
+            if (_fail)
+            {
+                _callback?.Invoke(StatusTransition.ScanComplete);
+                throw new InvalidOperationException("Alimentador vazio (simulado)");
+            }
+            return Task.FromResult(!_sent);
+        }
 
         public async Task WriteDocumentTo(Stream stream)
         {
@@ -60,7 +93,13 @@ internal static class DemoDevice
 
         public Task WriteProgressTo(Stream stream) => Task.CompletedTask;
 
-        public Task WriteErrorDetailsTo(Stream stream) => Task.CompletedTask;
+        public async Task WriteErrorDetailsTo(Stream stream)
+        {
+            if (!_fail) return;
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync("<Erro><Codigo>alimentador-vazio</Codigo><Mensagem>O alimentador está vazio. Coloque as folhas e tente de novo.</Mensagem>" +
+                                    "<Tecnico>simulado pelo aparelho de demonstração</Tecnico></Erro>");
+        }
 
         public void Dispose()
         {

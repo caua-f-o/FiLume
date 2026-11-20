@@ -45,6 +45,9 @@ Check 'escuta só em 127.0.0.1' ($listen.Count -ge 1 -and @($listen | Where-Obje
 
 $caps = Invoke-WebRequest "$($demo.url)/ScannerCapabilities" -UseBasicParsing -TimeoutSec 20
 Check 'responde o eSCL (ScannerCapabilities) em 127.0.0.1' ($caps.StatusCode -eq 200 -and $caps.Content -match 'FiPDF Demonstra')
+Check 'capacidades do aparelho: as que ele informou (A4, sem o 4800 dpi genérico)' ($caps.Content -match 'PlatenInputCaps' -and $caps.Content -match 'AdfDuplexInputCaps' -and $caps.Content -match 'FiPDFAutoSource' -and $caps.Content -match '<scan:MaxWidth>2480<' -and $caps.Content -notmatch '4800')
+$status = Invoke-WebRequest "$($demo.url)/ScannerStatus" -UseBasicParsing -TimeoutSec 20
+Check 'parado, não inventa estado do alimentador' ($status.StatusCode -eq 200 -and $status.Content -notmatch 'AdfState') $status.Content
 
 # Pelo IP de rede da máquina, não pode responder.
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
@@ -66,6 +69,12 @@ Check 'recebe a página (JPEG)' ($bytes.Length -gt 1000 -and $bytes[0] -eq 0xFF 
 $second = $null
 try { $second = Invoke-WebRequest "$location/NextDocument" -UseBasicParsing -TimeoutSec 30 } catch { $second = $_.Exception.Response }
 Check 'depois da última página, NextDocument responde 404' ([int]$second.StatusCode -eq 404) "$([int]$second.StatusCode)"
+
+# Origem automática (extensão do FiPDF).
+$auto = $settings.Replace('<pwg:InputSource>Platen</pwg:InputSource>', '<pwg:InputSource>Auto</pwg:InputSource>')
+$job2 = Invoke-WebRequest "$($demo.url)/ScanJobs" -Method Post -Body $auto -ContentType 'text/xml' -UseBasicParsing -TimeoutSec 20
+Check 'aceita a origem "Auto"' ($job2.StatusCode -eq 201)
+Invoke-WebRequest "$($job2.Headers['Location'])/NextDocument" -UseBasicParsing -TimeoutSec 30 -OutFile $jpg
 
 $p.StandardInput.WriteLine('ping')
 Check 'ping → pong' ((Read-Json $p).tipo -eq 'pong')
@@ -101,6 +110,7 @@ $p.StandardInput.WriteLine('sair'); $null = $p.WaitForExit(15000)
 
 $log = Join-Path ([IO.Path]::GetTempPath()) 'fipdf-scan-teste/fipdf-scan.log'
 Check 'grava o log' ((Test-Path $log) -and (Get-Content $log -Raw) -match 'FiPDF Demonstra')
+Check 'o log registra a origem Auto do pedido' ((Get-Content $log -Raw) -match 'origem Auto')
 
 if ($bad -gt 0) { Write-Host "$bad problemas"; exit 1 }
 Write-Host 'Tudo certo.'

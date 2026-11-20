@@ -2,7 +2,9 @@
 // NAPS2.Escl.Server, versão 8.6.1 / SDK 1.5.0).
 // Copyright 2009-2026 NAPS2 Contributors; modificações © 2026 Cauã F. O.
 // Licença: GNU LGPL v2.1 ou posterior (veja LICENSE nesta pasta).
-// Modificações: só o namespace (FiPDF.Escl.Local).
+// Modificações: namespace (FiPDF.Escl.Local); capacidades por aparelho (vidro, alimentador,
+// frente e verso, resoluções, cores e área informados pelo driver, em vez de "tudo" fixo);
+// sem AdfState inventado; origem "Auto" (extensão FiPDFAutoSource) repassada ao trabalho.
 
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
@@ -24,15 +26,28 @@ internal class EsclApiController : WebApiController
     private readonly EsclServerState _serverState;
     private readonly EsclSecurityPolicy _securityPolicy;
     private readonly ILogger _logger;
+    private readonly Func<EsclDeviceConfig, LocalScanRequest, IEsclScanJob>? _jobFactory;
+
+    /// <summary>Extensões padrão do NAPS2, quando o aparelho não informa as suas.</summary>
+    internal const string DefaultExtensions = "Progress;ErrorDetails;ShortTimeout;AnyDpi";
 
     internal EsclApiController(EsclDeviceConfig deviceConfig, EsclServerState serverState,
-        EsclSecurityPolicy securityPolicy, ILogger logger)
+        EsclSecurityPolicy securityPolicy, ILogger logger,
+        Func<EsclDeviceConfig, LocalScanRequest, IEsclScanJob>? jobFactory = null)
     {
         _deviceConfig = deviceConfig;
         _serverState = serverState;
         _securityPolicy = securityPolicy;
         _logger = logger;
+        _jobFactory = jobFactory;
     }
+
+    /// <summary>
+    /// O aparelho informou o que tem? Sem isso (o driver não respondeu), anuncia vidro, alimentador e
+    /// frente e verso, como o NAPS2 original.
+    /// </summary>
+    private bool KnownSources(EsclCapabilities caps) =>
+        caps.PlatenCaps != null || caps.AdfSimplexCaps != null || caps.AdfDuplexCaps != null;
 
     [Route(HttpVerbs.Get, "/ScannerCapabilities")]
     public async Task GetScannerCapabilities()
@@ -51,12 +66,18 @@ internal class EsclApiController : WebApiController
                     new XElement(ScanNs + "UUID", caps.Uuid),
                     new XElement(ScanNs + "AdminURI", adminUri),
                     new XElement(ScanNs + "IconURI", iconUri),
-                    new XElement(ScanNs + "Naps2Extensions", "Progress;ErrorDetails;ShortTimeout;AnyDpi"),
-                    new XElement(ScanNs + "Platen",
-                        new XElement(ScanNs + "PlatenInputCaps", GetCommonInputCaps())),
-                    new XElement(ScanNs + "Adf",
-                        new XElement(ScanNs + "AdfSimplexInputCaps", GetCommonInputCaps()),
-                        new XElement(ScanNs + "AdfDuplexInputCaps", GetCommonInputCaps())),
+                    new XElement(ScanNs + "Naps2Extensions", caps.Naps2Extensions ?? DefaultExtensions),
+                    KnownSources(caps) && caps.PlatenCaps == null
+                        ? null
+                        : new XElement(ScanNs + "Platen",
+                            new XElement(ScanNs + "PlatenInputCaps", GetCommonInputCaps(caps.PlatenCaps))),
+                    KnownSources(caps) && caps.AdfSimplexCaps == null
+                        ? null
+                        : new XElement(ScanNs + "Adf",
+                            new XElement(ScanNs + "AdfSimplexInputCaps", GetCommonInputCaps(caps.AdfSimplexCaps)),
+                            KnownSources(caps) && caps.AdfDuplexCaps == null
+                                ? null
+                                : new XElement(ScanNs + "AdfDuplexInputCaps", GetCommonInputCaps(caps.AdfDuplexCaps))),
                     new XElement(ScanNs + "CompressionFactorSupport",
                         new XElement(ScanNs + "Min", 0),
                         new XElement(ScanNs + "Max", 100),
@@ -67,22 +88,28 @@ internal class EsclApiController : WebApiController
         await writer.WriteAsync(doc);
     }
 
-    private object[] GetCommonInputCaps()
+    private static readonly int[] CommonResolutions = [100, 150, 200, 300, 400, 600, 800, 1200, 2400, 4800];
+
+    private object[] GetCommonInputCaps(EsclInputCaps? input)
     {
-        // TODO: After implementing scanner capabilities this should be scanner-specific
+        // Sem dados do aparelho, os valores genéricos do NAPS2.
+        var profile = input?.SettingProfiles.FirstOrDefault();
+        var modes = profile?.ColorModes is { Count: > 0 } m
+            ? m
+            : [EsclColorMode.BlackAndWhite1, EsclColorMode.Grayscale8, EsclColorMode.RGB24];
+        var resolutions = profile?.DiscreteResolutions is { Count: > 0 } r
+            ? r.Select(x => x.XResolution).Distinct().OrderBy(x => x).ToList()
+            : CommonResolutions.ToList();
         return
         [
-            new XElement(ScanNs + "MinWidth", "1"),
-            new XElement(ScanNs + "MaxWidth", EsclInputCaps.DEFAULT_MAX_WIDTH),
-            new XElement(ScanNs + "MinHeight", "1"),
-            new XElement(ScanNs + "MaxHeight", EsclInputCaps.DEFAULT_MAX_HEIGHT),
+            new XElement(ScanNs + "MinWidth", input?.MinWidth ?? 1),
+            new XElement(ScanNs + "MaxWidth", input?.MaxWidth ?? EsclInputCaps.DEFAULT_MAX_WIDTH),
+            new XElement(ScanNs + "MinHeight", input?.MinHeight ?? 1),
+            new XElement(ScanNs + "MaxHeight", input?.MaxHeight ?? EsclInputCaps.DEFAULT_MAX_HEIGHT),
             new XElement(ScanNs + "MaxScanRegions", "1"),
             new XElement(ScanNs + "SettingProfiles",
                 new XElement(ScanNs + "SettingProfile",
-                    new XElement(ScanNs + "ColorModes",
-                        new XElement(ScanNs + "ColorMode", "BlackAndWhite1"),
-                        new XElement(ScanNs + "ColorMode", "Grayscale8"),
-                        new XElement(ScanNs + "ColorMode", "RGB24")),
+                    new XElement(ScanNs + "ColorModes", modes.Select(x => new XElement(ScanNs + "ColorMode", x.ToString()))),
                     new XElement(ScanNs + "DocumentFormats",
                         new XElement(PwgNs + "DocumentFormat", "application/pdf"),
                         new XElement(PwgNs + "DocumentFormat", "image/jpeg"),
@@ -92,18 +119,7 @@ internal class EsclApiController : WebApiController
                         new XElement(ScanNs + "DocumentFormatExt", "image/png")
                     ),
                     new XElement(ScanNs + "SupportedResolutions",
-                        new XElement(ScanNs + "DiscreteResolutions",
-                            CreateResolution(100),
-                            CreateResolution(150),
-                            CreateResolution(200),
-                            CreateResolution(300),
-                            CreateResolution(400),
-                            CreateResolution(600),
-                            CreateResolution(800),
-                            CreateResolution(1200),
-                            CreateResolution(2400),
-                            CreateResolution(4800)
-                        ))))
+                        new XElement(ScanNs + "DiscreteResolutions", resolutions.Select(CreateResolution)))))
         ];
     }
 
@@ -178,13 +194,16 @@ internal class EsclApiController : WebApiController
                         jobInfo.State == EsclJobState.Processing ? "JobScanning" : "JobCompletedSuccessfully"))));
         }
         var scannerState = _serverState.IsProcessing ? EsclScannerState.Processing : EsclScannerState.Idle;
-        var adfState = _serverState.IsProcessing ? EsclAdfState.ScannerAdfProcessing : EsclAdfState.ScannerAdfLoaded;
+        // O driver não diz se há papel no alimentador. O original respondia sempre "com papel", e o
+        // cliente escolhia o alimentador no modo automático mesmo sem folha (ou sem alimentador).
+        // Aqui só vai o estado que se sabe: "processando", durante um trabalho.
+        var hasAdf = !KnownSources(_deviceConfig.Capabilities) || _deviceConfig.Capabilities.AdfSimplexCaps != null;
         var doc =
             EsclXmlHelper.CreateDocAsString(
                 new XElement(ScanNs + "ScannerStatus",
                     new XElement(PwgNs + "Version", "2.6"),
                     new XElement(PwgNs + "State", scannerState),
-                    new XElement(ScanNs + "AdfState", adfState),
+                    hasAdf && _serverState.IsProcessing ? new XElement(ScanNs + "AdfState", EsclAdfState.ScannerAdfProcessing) : null,
                     jobsElement
                 ));
         Response.ContentType = "text/xml";
@@ -197,10 +216,15 @@ internal class EsclApiController : WebApiController
     {
         // TODO: Actually use job input for scan options
         EsclScanSettings settings;
+        var autoSource = false;
         try
         {
             var doc = XDocument.Load(Request.InputStream);
             settings = SettingsParser.Parse(doc);
+            // Extensão do FiPDF: <pwg:InputSource>Auto</pwg:InputSource> = o driver escolhe
+            // (alimentador se tiver papel, senão vidro). O eSCL padrão não tem esse valor.
+            autoSource = string.Equals(doc.Root?.Element(PwgNs + "InputSource")?.Value.Trim(), "Auto",
+                StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception)
         {
@@ -213,7 +237,21 @@ internal class EsclApiController : WebApiController
             return;
         }
         _serverState.IsProcessing = true;
-        var jobInfo = JobInfo.CreateNewJob(_serverState, _deviceConfig.CreateJob(settings));
+        IEsclScanJob job;
+        try
+        {
+            job = _jobFactory != null
+                ? _jobFactory(_deviceConfig, new LocalScanRequest(settings, autoSource))
+                : _deviceConfig.CreateJob(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Não foi possível começar a digitalização");
+            _serverState.IsProcessing = false;
+            Response.StatusCode = 500;
+            return;
+        }
+        var jobInfo = JobInfo.CreateNewJob(_serverState, job);
         _serverState.AddJob(jobInfo);
         var uri = Request.Url;
         if (Request.IsSecureConnection)

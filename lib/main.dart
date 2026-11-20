@@ -33,6 +33,9 @@ Future<void> main(List<String> args) async {
     // FiPDF: não carrega o player nem nada de vídeo, áudio ou imagem.
     final state = AppState(pdfOnly: true);
     await state.prefs.load();
+    // O auxiliar dos scanners deste computador sobe junto, em segundo plano: quando a pessoa
+    // abrir "Digitalizar", os aparelhos já estão listados.
+    state.scanner.bridge.warmUp();
     runApp(PdfApp(state: state, files: fileArgs(args)));
     return;
   }

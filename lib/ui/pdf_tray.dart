@@ -683,69 +683,104 @@ class _ScanDialog extends StatefulWidget {
 
 class _ScanDialogState extends State<_ScanDialog> {
   final _host = TextEditingController();
+
+  /// Aparelhos da lista (rede e deste computador). Null antes da primeira busca.
   List<ScanDevice>? _devices;
   String? _error, _details;
   bool _scanning = false, _probing = false;
+  bool _searchingNet = false, _searchingLocal = false;
+  String? _localProblem;
   ScanCancel? _cancelToken;
   int _load = 0, _pages = 0;
 
   ScanSettings get s => widget.settings;
+  Scanner get scanner => widget.scanner;
 
   @override
   void initState() {
     super.initState();
-    // Fora do Windows só existe o scanner de rede.
-    if (!Platform.isWindows) s.driver = 'escl';
-    _showKnownOrSearch();
+    scanner.bridge.onChange = () {
+      if (mounted) setState(() {});
+    };
+    final known = [...s.known];
+    if (known.isEmpty) {
+      _search();
+    } else {
+      // Mostra na hora os que já foram encontrados; os deste computador são conferidos em
+      // segundo plano (o auxiliar pode ter achado outros, e as portas dele mudam a cada vez).
+      _setDevices(known);
+      _search(network: false, refresh: false);
+    }
   }
 
   @override
   void dispose() {
+    scanner.bridge.onChange = null;
     _host.dispose();
     super.dispose();
   }
 
+  String get _selected => '${s.driver}|${s.device}';
+
   void _setDevices(List<ScanDevice> list) {
     _devices = list;
-    if (!list.any((d) => d.id == s.device)) s.device = list.isEmpty ? '' : list.first.id;
-  }
-
-  /// Mostra os scanners já conhecidos; só procura se ainda não houver nenhum.
-  void _showKnownOrSearch() {
-    final known = s.knownFor(s.driver);
-    if (known.isEmpty) {
-      _loadDevices();
-    } else {
-      _load++;
-      setState(() {
-        _error = _details = null;
-        _setDevices(known);
-      });
+    if (!list.any((d) => d.key == _selected) && list.isNotEmpty) {
+      s.driver = list.first.driver;
+      s.device = list.first.id;
     }
   }
 
-  Future<void> _loadDevices() async {
+  /// Procura nos dois lugares ao mesmo tempo: a rede e o auxiliar deste computador.
+  /// [refresh] pede ao auxiliar que procure de novo (senão vale a lista que ele já tem).
+  Future<void> _search({bool network = true, bool local = true, bool refresh = true}) async {
     final ticket = ++_load;
     setState(() {
-      _devices = null;
       _error = _details = null;
+      _searchingNet = network;
+      _searchingLocal = local;
+      if (local) _localProblem = null;
     });
-    try {
-      final list = await widget.scanner.devices(s.driver);
+    final net = network ? scanner.network().catchError((_) => <ScanDevice>[]) : null;
+    final here = local
+        ? scanner.local(refresh: refresh).catchError((Object e) {
+            _localProblem = e is ScanError ? e.message : 'Não foi possível procurar os scanners deste computador.';
+            return <ScanDevice>[];
+          })
+        : null;
+    void merge({List<ScanDevice>? fromNet, List<ScanDevice>? fromHere}) {
       if (!mounted || ticket != _load) return;
-      // Na rede, quem foi adicionado pelo endereço continua na lista.
-      final all = [...list, ...s.knownFor(s.driver).where((k) => s.driver == 'escl' && !list.any((d) => d.id == k.id || d.name == k.name))];
-      s.remember(s.driver, all);
+      final old = [...s.known];
+      final all = <ScanDevice>[
+        // Deste computador: a lista nova substitui a antiga.
+        ...?fromHere,
+        if (fromHere == null) ...old.where((d) => !d.isNetwork),
+        // Rede: os achados agora, mais os que foram adicionados pelo endereço.
+        ...?fromNet,
+        ...old.where((d) => d.isNetwork && (fromNet == null || !fromNet.any((n) => n.id == d.id || n.name == d.name))),
+      ];
+      s.known
+        ..clear()
+        ..addAll(all);
       setState(() => _setDevices(all));
       widget.onSave();
-    } catch (e) {
-      if (!mounted || ticket != _load) return;
-      setState(() {
-        _devices = const [];
-        _error = e is ScanError ? e.message : 'Não foi possível listar os scanners.';
-        _details = e is ScanError ? e.details : '$e';
+    }
+
+    if (here != null) {
+      here.then((list) {
+        if (!mounted || ticket != _load) return;
+        _searchingLocal = false;
+        merge(fromHere: list);
       });
     }
+    if (net != null) {
+      net.then((list) {
+        if (!mounted || ticket != _load) return;
+        _searchingNet = false;
+        merge(fromNet: list);
+      });
+    }
+    await Future.wait([?net, ?here]);
+    if (mounted && ticket == _load) setState(() => _searchingNet = _searchingLocal = false);
   }
 
   /// Scanner de rede pelo endereço digitado.
@@ -755,11 +790,14 @@ class _ScanDialogState extends State<_ScanDialog> {
       _error = _details = null;
     });
     try {
-      final d = await widget.scanner.esclAt(_host.text);
+      final d = await scanner.esclAt(_host.text);
       if (!mounted) return;
       setState(() {
-        s.remember('escl', [...s.knownFor('escl').where((k) => k.id != d.id), d]);
-        _setDevices(s.knownFor('escl'));
+        s.known
+          ..removeWhere((k) => k.key == d.key)
+          ..add(d);
+        _setDevices([...s.known]);
+        s.driver = d.driver;
         s.device = d.id;
       });
       widget.onSave();
@@ -782,7 +820,7 @@ class _ScanDialogState extends State<_ScanDialog> {
       _error = _details = null;
     });
     try {
-      await widget.scanner.scan(s, cancel: token, onPage: (path) {
+      await scanner.scan(s, cancel: token, onPage: (path) {
         widget.onPage(path);
         if (mounted) setState(() => _pages++);
       });
@@ -808,7 +846,8 @@ class _ScanDialogState extends State<_ScanDialog> {
     final t = Theme.of(context);
     final cs = t.colorScheme;
     final devices = _devices;
-    final net = s.driver == 'escl';
+    final searching = _searchingNet || _searchingLocal;
+    final bridge = scanner.bridge;
     Widget label(String text) => Padding(
           padding: const EdgeInsets.only(top: 16, bottom: 8),
           child: Text(text, style: t.textTheme.labelLarge?.copyWith(color: cs.onSurfaceVariant)),
@@ -831,68 +870,70 @@ class _ScanDialogState extends State<_ScanDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              label('Onde está o scanner'),
-              seg({if (Platform.isWindows) 'wia': 'Neste computador (USB)', 'escl': 'Na rede (Wi-Fi ou cabo)'}, s.driver, (v) {
-                s.driver = v;
-                _showKnownOrSearch();
-              }),
               label('Scanner'),
-              if (devices == null)
+              if (devices == null || (devices.isEmpty && searching))
                 Row(children: [
                   const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5)),
                   const SizedBox(width: 12),
-                  Text(net ? 'Procurando scanners na rede…' : 'Procurando scanners…'),
+                  Expanded(child: Text(_searchingLocal ? 'Procurando scanners neste computador e na rede…' : 'Procurando scanners na rede…')),
                 ])
               else if (devices.isEmpty)
                 Text(
-                  _error ??
-                      (net
-                          ? 'Nenhum scanner apareceu na rede. Se ele estiver ligado e na mesma rede, digite o endereço dele abaixo.'
-                          : 'Nenhum scanner encontrado neste computador. Confira se ele está ligado e com o driver '
-                              'instalado, ou tente "Na rede" se for uma multifuncional com Wi-Fi.'),
+                  'Nenhum scanner encontrado, nem neste computador nem na rede. Confira se ele está ligado e conectado '
+                  '(no USB, com o driver instalado). Se for de rede e não apareceu, digite o endereço dele abaixo.',
                   style: TextStyle(color: cs.error),
                 )
               else
                 Choice<String>(
-                  key: ValueKey('${s.driver}-${devices.length}-${s.device}'),
+                  key: ValueKey('${devices.length}-$_selected'),
                   label: 'Aparelho',
-                  value: s.device,
-                  options: {for (final d in devices) d.id: d.name},
-                  onChanged: (v) => setState(() => s.device = v),
+                  value: devices.any((d) => d.key == _selected) ? _selected : devices.first.key,
+                  options: {for (final d in devices) d.key: '${d.name} · ${d.tag}'},
+                  onChanged: (v) => setState(() {
+                    final d = devices.firstWhere((x) => x.key == v);
+                    s.driver = d.driver;
+                    s.device = d.id;
+                  }),
                 ),
-              if (devices != null) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    if (net)
-                      Expanded(
-                        child: TextField(
-                          controller: _host,
-                          enabled: !_scanning && !_probing,
-                          onSubmitted: (_) => _connect(),
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Endereço do scanner (IP)',
-                            hintText: 'Ex.: 192.168.0.25',
-                          ),
-                        ),
-                      )
-                    else
-                      const Spacer(),
-                    const SizedBox(width: 8),
-                    if (net)
-                      FilledButton.tonal(
-                        onPressed: _scanning || _probing ? null : _connect,
-                        child: Text(_probing ? 'Conectando…' : 'Conectar'),
-                      ),
-                    IconButton(
-                      tooltip: 'Procurar scanners de novo',
-                      onPressed: _scanning ? null : _loadDevices,
-                      icon: const Icon(Icons.refresh),
-                    ),
-                  ],
-                ),
+              if (devices != null && devices.isNotEmpty && searching) ...[
+                const SizedBox(height: 6),
+                Text(_searchingLocal ? 'Procurando outros aparelhos…' : 'Procurando outros aparelhos na rede…', style: _muted(context)),
               ],
+              if (bridge.notice != null) ...[
+                const SizedBox(height: 6),
+                Text(bridge.notice!, style: TextStyle(color: cs.tertiary)),
+              ],
+              if (_localProblem != null && !searching) ...[
+                const SizedBox(height: 6),
+                Text('Scanners deste computador: $_localProblem', style: _muted(context)),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _host,
+                      enabled: !_scanning && !_probing,
+                      onSubmitted: (_) => _connect(),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Scanner de rede pelo endereço (IP)',
+                        hintText: 'Ex.: 192.168.0.25',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonal(
+                    onPressed: _scanning || _probing ? null : _connect,
+                    child: Text(_probing ? 'Conectando…' : 'Conectar'),
+                  ),
+                  IconButton(
+                    tooltip: 'Procurar scanners de novo (neste computador e na rede)',
+                    onPressed: _scanning || searching ? null : _search,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
               label('Origem do papel'),
               seg({'auto': 'Automático', 'glass': 'Vidro', 'feeder': 'Alimentador'}, s.source, (v) => s.source = v),
               CheckboxListTile(

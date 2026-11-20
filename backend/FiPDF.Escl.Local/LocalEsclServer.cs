@@ -2,7 +2,8 @@
 // NAPS2.Escl.Server, versão 8.6.1 / SDK 1.5.0).
 // Copyright 2009-2026 NAPS2 Contributors; modificações © 2026 Cauã F. O.
 // Licença: GNU LGPL v2.1 ou posterior (veja LICENSE nesta pasta).
-// Modificações: escuta só em 127.0.0.1 (nunca na rede), sem HTTPS, sem certificado próprio e sem anúncio mDNS; expõe as portas usadas.
+// Modificações: escuta só em 127.0.0.1 (nunca na rede), sem HTTPS, sem certificado próprio e sem anúncio mDNS;
+// expõe as portas usadas; aceita uma fábrica de trabalhos com o pedido completo (JobFactory).
 
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
@@ -56,6 +57,12 @@ public sealed class LocalEsclServer : IEsclServer
     public X509Certificate2? Certificate { get; set; }
 
     public ILogger Logger { get; set; } = NullLogger.Instance;
+
+    /// <summary>
+    /// Cria os trabalhos de digitalização no lugar de <see cref="EsclDeviceConfig.CreateJob"/>, com o
+    /// pedido completo (inclusive a origem "Auto", que o <see cref="EsclScanSettings"/> não tem).
+    /// </summary>
+    public Func<EsclDeviceConfig, LocalScanRequest, IEsclScanJob>? JobFactory { get; set; }
 
     /// <summary>Aparelhos registrados, na ordem em que foram adicionados, com a porta em uso (0 = ainda não subiu).</summary>
     public IReadOnlyList<(EsclDeviceConfig Config, int Port, string? Error)> Devices
@@ -153,7 +160,7 @@ public sealed class LocalEsclServer : IEsclServer
             .HandleUnhandledException(UnhandledServerException);
         server.WithWebApi("/eSCL",
             m => m.WithController(() =>
-                new EsclApiController(ctx.Config, ctx.ServerState, SecurityPolicy, Logger)));
+                new EsclApiController(ctx.Config, ctx.ServerState, SecurityPolicy, Logger, JobFactory)));
         // Volta quando o servidor está escutando, ou com o erro (porta ocupada etc.).
         await server.StartAsync(cancelToken);
         ctx.Server = server;
