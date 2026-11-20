@@ -32,6 +32,9 @@ function Read-Json($proc, [int]$seconds = 60) {
 $p = Start-Bridge 'servir --demo'
 $ready = Read-Json $p 120
 Check 'anuncia que está pronto, com a versão do protocolo' ($ready.tipo -eq 'pronto' -and $ready.versao -eq 1)
+# Algum recurso do .NET desligado pelo trimming (ex.: o COM que o WIA usa) aparece como erro do driver.
+$switched = @($ready.erros | Where-Object { $_.mensagem -match 'feature switch|disabled via' })
+Check 'nenhum driver quebrado pelo trimming' ($switched.Count -eq 0) (($switched | ForEach-Object { "$($_.driver): $($_.mensagem)" }) -join ' | ')
 $demo = $ready.dispositivos | Where-Object { $_.driver -eq 'demo' } | Select-Object -First 1
 Check 'o aparelho de demonstração aparece com URL local' ($demo -and $demo.url -match '^http://127\.0\.0\.1:\d+/eSCL$') "$($demo.url)"
 $port = [int]([uri]$demo.url).Port

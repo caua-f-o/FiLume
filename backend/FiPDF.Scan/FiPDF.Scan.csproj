@@ -16,6 +16,11 @@
       quebrar sem aviso. É o "desligar o trimming só para o NAPS2" do roadmap.
     -->
     <TrimMode>partial</TrimMode>
+    <!--
+      O trimming desliga o COM do .NET por padrão, e o WIA precisa dele (sem isto, a lista do WIA
+      falha com "Built-in COM has been disabled via a feature switch").
+    -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <!-- Mostra no build o que o trimming acha arriscado, em vez de esconder. -->
     <SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
     <!-- O System.Drawing (usado pela NAPS2.Images.Gdi) avisa que é só do Windows; aqui isso é o esperado. -->
