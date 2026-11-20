@@ -35,7 +35,7 @@ internal static class DemoDevice
 
         public void Cancel() => _callback?.Invoke(StatusTransition.CancelJob);
 
-        public void Start(Action<StatusTransition>? statusCallback = null) => _callback = statusCallback;
+        public void RegisterStatusTransitionCallback(Action<StatusTransition> callback) => _callback = callback;
 
         // Uma página só.
         public Task<bool> WaitForNextDocument(CancellationToken cancelToken) => Task.FromResult(!_sent);

@@ -23,11 +23,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- "1.*" pega a 1.x mais nova; a versão exata é fixada depois do primeiro build. -->
-    <PackageReference Include="NAPS2.Sdk" Version="1.*" />
-    <PackageReference Include="NAPS2.Images.Gdi" Version="1.*" />
+    <!-- SDK 1.5.0 = NAPS2 8.6.1, a última publicada no NuGet (a 1.6.x ainda não saiu). -->
+    <PackageReference Include="NAPS2.Sdk" Version="1.5.0" />
+    <PackageReference Include="NAPS2.Images.Gdi" Version="1.5.0" />
     <!-- O TWAIN exige um processo de 32 bits: este pacote traz o NAPS2.Worker.exe pronto. -->
-    <PackageReference Include="NAPS2.Sdk.Worker.Win32" Version="1.*" />
+    <PackageReference Include="NAPS2.Sdk.Worker.Win32" Version="1.5.0" />
   </ItemGroup>
 
   <ItemGroup>

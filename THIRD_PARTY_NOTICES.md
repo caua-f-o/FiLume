@@ -32,8 +32,8 @@ como bibliotecas:
 | NAPS2.Wia, NAPS2.NTwain (dependências da NAPS2.Sdk) | LGPL v2.1 ou posterior |
 | EmbedIO (servidor HTTP do eSCL) | MIT |
 
-O servidor eSCL local (`FiPDF.Escl.Local.dll`) **é uma cópia modificada** do NAPS2.Escl.Server (versão 9.0b1,
-SDK 1.6.1), também sob a **LGPL v2.1 ou posterior**: escuta só em `127.0.0.1`, sem HTTPS, sem certificado e
+O servidor eSCL local (`FiPDF.Escl.Local.dll`) **é uma cópia modificada** do NAPS2.Escl.Server (versão 8.6.1,
+SDK 1.5.0), também sob a **LGPL v2.1 ou posterior**: escuta só em `127.0.0.1`, sem HTTPS, sem certificado e
 sem anúncio na rede (mDNS). Cada arquivo traz o aviso do que mudou; o código-fonte modificado está na pasta
 `backend/FiPDF.Escl.Local` do repositório do FiLume.
 

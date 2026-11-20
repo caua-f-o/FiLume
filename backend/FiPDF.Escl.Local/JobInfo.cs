@@ -1,5 +1,5 @@
 // Arquivo do FiPDF.Escl.Local, derivado do NAPS2 (https://github.com/cyanfish/naps2,
-// NAPS2.Escl.Server, versão 9.0b1 / SDK 1.6.1).
+// NAPS2.Escl.Server, versão 8.6.1 / SDK 1.5.0).
 // Copyright 2009-2026 NAPS2 Contributors; modificações © 2026 Cauã F. O.
 // Licença: GNU LGPL v2.1 ou posterior (veja LICENSE nesta pasta).
 // Modificações: só o namespace (FiPDF.Escl.Local).
@@ -19,7 +19,7 @@ internal class JobInfo
             LastUpdated = Stopwatch.StartNew(),
             Job = job
         };
-        job.Start(transition =>
+        job.RegisterStatusTransitionCallback(transition =>
         {
             if (transition == StatusTransition.CancelJob)
             {
