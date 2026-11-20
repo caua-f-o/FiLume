@@ -59,7 +59,7 @@ Quer testar novidades antes? As **betas** ficam nas [releases](https://github.co
 
 ### 📄 FiPDF
 
-Aplicativo dedicado (`FiPDF.exe`, na mesma pasta do FiLume; antes se chamava FiLume PDF). Tudo gira em torno da **bandeja de páginas**, no estilo do NAPS2: solte PDFs e imagens ou digitalize (scanner USB pelo Windows/WIA, ou de rede por AirScan/eSCL), arraste para reordenar, gire, inverta, endireite e veja de perto. Cada ferramenta trabalha sobre o que está na bandeja:
+Aplicativo dedicado (`FiPDF.exe`, na mesma pasta do FiLume; antes se chamava FiLume PDF). Tudo gira em torno da **bandeja de páginas**, no estilo do NAPS2: solte PDFs e imagens ou digitalize (scanner deste computador pelo WIA ou TWAIN, ou de rede por AirScan/eSCL, numa lista só), arraste para reordenar, gire, inverta, endireite e veja de perto. Cada ferramenta trabalha sobre o que está na bandeja:
 
 | Ferramenta | O que faz |
 | --- | --- |

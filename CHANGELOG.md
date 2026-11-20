@@ -3,6 +3,19 @@
 Todas as mudanças relevantes do FiLume. As versões seguem o `pubspec.yaml`.
 Versões estáveis saem do branch `main`; betas (`-beta.N`) saem do `dev` como pre-release.
 
+## [1.5.0-beta.14] — 2026-11-20
+
+### Alterado
+- FiPDF → **Digitalizar**: os scanners deste computador agora passam pelo **FiPDF.Scan**, um auxiliar em C# que vem junto (pasta `fipdf-scan`) e usa as bibliotecas do NAPS2. Ele traz o **TWAIN** além do WIA, e cada aparelho é servido por eSCL só para este computador (`127.0.0.1`, nada fica exposto na rede). O FiPDF digitaliza por ele com o mesmo caminho dos scanners de rede.
+- Uma lista só de aparelhos, com a etiqueta de cada um: **Rede**, **Local · WIA** ou **Local · TWAIN**. O botão de atualizar procura nos dois lugares ao mesmo tempo; o endereço (IP) de um scanner de rede pode ser digitado como antes.
+- Vidro, alimentador e frente e verso de cada aparelho local vêm do driver; o **Automático** deixa o próprio driver escolher (alimentador com papel, senão vidro). Sem área definida, a folha é A4.
+- Erros dos aparelhos locais aparecem em português (alimentador vazio, papel atolado, tampa aberta…).
+- O auxiliar abre junto com o FiPDF e fecha com ele. Se travar ou cair, o FiPDF o reinicia sozinho e avisa na tela de digitalização. O registro fica em `%LOCALAPPDATA%\FiLume\logs\fipdf-scan.log`.
+- Se o auxiliar não estiver disponível, os scanners WIA continuam funcionando pelo caminho antigo.
+
+### Corrigido
+- Digitalização em rede: o pedido ao scanner vai com o tamanho declarado (alguns aparelhos não liam o pedido enviado em partes).
+
 ## [1.5.0-beta.13] — 2026-11-16
 
 ### Alterado

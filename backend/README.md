@@ -10,9 +10,21 @@ em C# que rodam junto com o app. O plano está no roadmap do FiPDF.
 
 ## A ponte (`FiPDF.Scan servir`)
 
-O FiPDF abre o auxiliar junto com ele. Cada aparelho local (WIA ou TWAIN) ganha um
-servidor eSCL em `127.0.0.1`, e o FiPDF digitaliza por ele com o mesmo cliente eSCL que
-usa para os aparelhos de rede. Pela ponte só passam comandos; as páginas vêm pelo eSCL.
+O FiPDF abre o auxiliar junto com ele (`lib/core/scan_bridge.dart`). Cada aparelho local
+(WIA ou TWAIN) ganha um servidor eSCL em `127.0.0.1`, e o FiPDF digitaliza por ele com o
+mesmo cliente eSCL que usa para os aparelhos de rede. Pela ponte só passam comandos; as
+páginas vêm pelo eSCL.
+
+Diferenças em relação ao servidor de compartilhamento do NAPS2:
+
+- **Capacidades reais**: vidro, alimentador, frente e verso, resoluções, cores e área de cada
+  aparelho vêm do driver (o NAPS2 anuncia "tudo" fixo). Sem resposta do driver, volta ao "tudo".
+- **Sem estado do alimentador inventado**: o NAPS2 responde sempre "com papel"; aqui o estado
+  só aparece durante um trabalho.
+- **Origem automática**: `<pwg:InputSource>Auto</pwg:InputSource>` (extensão `FiPDFAutoSource`)
+  deixa o driver escolher entre alimentador e vidro.
+- **A4** quando o pedido não traz área (o NAPS2 usa Carta, que corta o fim da folha A4).
+- **Erros em português** em `ScanJobs/{id}/ErrorDetails`: `<Erro><Codigo>…</Codigo><Mensagem>…</Mensagem></Erro>`.
 
 Ao subir, o auxiliar escreve uma linha JSON no stdout:
 
