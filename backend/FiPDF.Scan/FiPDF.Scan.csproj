@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>FiPDF.Scan</AssemblyName>
+    <RootNamespace>FiPDF.Scan</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>Auxiliar de digitalização do FiPDF (WIA e TWAIN pela NAPS2.Sdk).</Description>
+
+    <!-- Publicação: tudo junto, sem exigir o .NET instalado no computador. -->
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
+    <!--
+      "partial": só enxuga as bibliotecas que declaram suportar isso (o runtime do .NET).
+      A NAPS2.Sdk carrega partes por reflexão e interop; com o modo "full" ela pode
+      quebrar sem aviso. É o "desligar o trimming só para o NAPS2" do roadmap.
+    -->
+    <TrimMode>partial</TrimMode>
+    <!-- Mostra no build o que o trimming acha arriscado, em vez de esconder. -->
+    <SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
+    <!-- O System.Drawing (usado pela NAPS2.Images.Gdi) avisa que é só do Windows; aqui isso é o esperado. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- "1.*" pega a 1.x mais nova; a versão exata é fixada depois do primeiro build. -->
+    <PackageReference Include="NAPS2.Sdk" Version="1.*" />
+    <PackageReference Include="NAPS2.Images.Gdi" Version="1.*" />
+    <!-- O TWAIN exige um processo de 32 bits: este pacote traz o NAPS2.Worker.exe pronto. -->
+    <PackageReference Include="NAPS2.Sdk.Worker.Win32" Version="1.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Servidor eSCL que só escuta em 127.0.0.1 (derivado do NAPS2.Escl.Server, LGPL). -->
+    <ProjectReference Include="..\FiPDF.Escl.Local\FiPDF.Escl.Local.csproj" />
+  </ItemGroup>
+
+</Project>

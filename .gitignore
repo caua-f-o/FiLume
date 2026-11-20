@@ -16,3 +16,8 @@ pubspec.lock
 # Motores de PDF baixados no build
 /third_party/
 __pycache__/
+
+# Back em C#
+backend/**/bin/
+backend/**/obj/
+backend/publish/

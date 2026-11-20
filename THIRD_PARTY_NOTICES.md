@@ -19,6 +19,28 @@ Cada um segue a sua própria licença, e o código-fonte está disponível nos e
 Bibliotecas usadas pelo app: media_kit (MIT, com libmpv), window_manager (MIT), desktop_drop (MIT),
 file_selector (BSD-3) e path (BSD-3).
 
+## NAPS2 (auxiliar de digitalização)
+
+O `FiPDF.Scan` (pasta `fipdf-scan` do pacote) é escrito em C# e usa as bibliotecas do
+[NAPS2](https://github.com/cyanfish/naps2), © 2009-2026 NAPS2 Contributors (Ben Olden-Cooligan),
+como bibliotecas:
+
+| Pacote | Licença |
+|---|---|
+| NAPS2.Sdk, NAPS2.Escl, NAPS2.Images, NAPS2.Images.Gdi, NAPS2.Internals (sem modificação) | **LGPL v2.1 ou posterior** |
+| NAPS2.Sdk.Worker.Win32 (o NAPS2.Worker.exe, para o TWAIN) | LGPL v2.1 ou posterior |
+| NAPS2.Wia, NAPS2.NTwain (dependências da NAPS2.Sdk) | LGPL v2.1 ou posterior |
+| EmbedIO (servidor HTTP do eSCL) | MIT |
+
+O servidor eSCL local (`FiPDF.Escl.Local.dll`) **é uma cópia modificada** do NAPS2.Escl.Server (versão 9.0b1,
+SDK 1.6.1), também sob a **LGPL v2.1 ou posterior**: escuta só em `127.0.0.1`, sem HTTPS, sem certificado e
+sem anúncio na rede (mDNS). Cada arquivo traz o aviso do que mudou; o código-fonte modificado está na pasta
+`backend/FiPDF.Escl.Local` do repositório do FiLume.
+
+O código-fonte está em https://github.com/cyanfish/naps2. Como pede a LGPL, as bibliotecas ficam em
+arquivos separados (DLLs) na pasta `fipdf-scan` e podem ser trocadas por outra versão compatível.
+O runtime do .NET que vai junto (self-contained) é da Microsoft, licença MIT (https://github.com/dotnet/runtime).
+
 ## PdfCraft
 
 As ferramentas **Tarjar**, **Formulário**, **Comentar**, **Medir**, **Verificar**, **Assinar** e **Limpar** do FiPDF, e a preservação dos marcadores ao organizar, foram projetadas com base no

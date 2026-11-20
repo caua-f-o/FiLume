@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="FiPDF.Escl.Local/FiPDF.Escl.Local.csproj" />
+  <Project Path="FiPDF.Scan/FiPDF.Scan.csproj" />
+</Solution>

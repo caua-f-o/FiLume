@@ -1,0 +1,17 @@
+<Project>
+  <!-- Configurações comuns a todos os projetos do back do FiPDF. -->
+  <PropertyGroup>
+    <!-- .NET 10: LTS com suporte até novembro de 2028 (o .NET 8 saiu de suporte em 10/11/2026). -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <SatelliteResourceLanguages>pt-BR;en</SatelliteResourceLanguages>
+    <Authors>Cauã F. O.</Authors>
+    <Company>FiLume</Company>
+    <Copyright>Cauã F. O. — GPL-3.0-or-later</Copyright>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

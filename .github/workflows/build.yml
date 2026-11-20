@@ -49,6 +49,36 @@ jobs:
       - name: Compilar (release)
         run: flutter build windows --release
 
+      - name: Instalar o .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Compilar o back em C# (FiPDF.Scan) e testar pelo terminal (bloqueia o build)
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'build/windows/x64/runner/Release/fipdf-scan'
+          # Dentro de backend/, para valer o global.json (SDK do .NET 10).
+          Push-Location backend
+          dotnet --version
+          dotnet publish FiPDF.Scan -c Release -o $out
+          if ($LASTEXITCODE -ne 0) { throw 'o FiPDF.Scan não compilou' }
+          # Versões que o NuGet escolheu (para fixar no .csproj).
+          dotnet list FiPDF.Scan package --include-transitive | Select-String 'NAPS2|EmbedIO'
+          Pop-Location
+          "FiPDF.Scan: {0:N1} MB em {1} arquivos" -f ((Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), (Get-ChildItem $out -Recurse -File).Count
+          $v = & "$out/FiPDF.Scan.exe" --versao
+          Write-Host $v
+          if ($LASTEXITCODE -ne 0 -or -not ($v | ConvertFrom-Json).protocolo) { throw 'FiPDF.Scan --versao falhou' }
+          # O computador do build não tem scanner: a lista vem vazia, mas o programa não pode quebrar.
+          $l = & "$out/FiPDF.Scan.exe" listar
+          Write-Host $l
+          if ($LASTEXITCODE -ne 0 -or ($l | ConvertFrom-Json).tipo -ne 'dispositivos') { throw 'FiPDF.Scan listar falhou (o trimming pode ter removido algo)' }
+          if (-not (Test-Path "$out/NAPS2.Worker.exe")) { throw 'o NAPS2.Worker.exe (TWAIN) não foi para o pacote' }
+          # Ponte: servidor eSCL local, comandos pelo stdin e encerramento quando o FiPDF some.
+          pwsh -NoProfile -File backend/test/ponte.ps1 $out
+          if ($LASTEXITCODE -ne 0) { throw 'o teste da ponte do FiPDF.Scan falhou' }
+
       - name: Embutir FFmpeg e runtime do Visual C++
         shell: pwsh
         run: |
